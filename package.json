@@ -8,6 +8,7 @@
     "start": "node psd2desc.js",
     "html": "node desc2html.js",
     "coco": "node desc2cocos.js",
+    "prefab-ui": "node prefab-ui.js",
     "test:coco": "node test/validate-desc2cocos.js"
   },
   "dependencies": {

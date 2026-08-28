@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>psd2desc · Prefab 导出</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --border: #2d3a4d;
+      --text: #e7edf5;
+      --muted: #8b9cb3;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --err: #ef4444;
+      --input-bg: #111827;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: radial-gradient(circle at top, #1e293b 0%, var(--bg) 55%);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .wrap {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }
+
+    header h1 {
+      margin: 0 0 8px;
+      font-size: 1.6rem;
+      font-weight: 600;
+    }
+
+    header p {
+      margin: 0 0 24px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--input-bg);
+      color: var(--text);
+      font: inherit;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      outline: 2px solid rgba(59, 130, 246, 0.45);
+      border-color: var(--accent);
+    }
+
+    .row-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    @media (max-width: 640px) {
+      .row-2 { grid-template-columns: 1fr; }
+    }
+
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .check-row input {
+      width: auto;
+    }
+
+    .check-row label {
+      margin: 0;
+      color: var(--text);
+    }
+
+    .hint {
+      margin-top: 6px;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    button {
+      border: none;
+      border-radius: 8px;
+      padding: 11px 18px;
+      font: inherit;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    button.primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    button.primary:hover:not(:disabled) {
+      background: var(--accent-hover);
+    }
+
+    button.secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    #log {
+      min-height: 180px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.85rem;
+      resize: vertical;
+      white-space: pre-wrap;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+
+    .dot.ok { background: var(--ok); }
+    .dot.err { background: var(--err); }
+    .dot.busy { background: var(--warn); animation: pulse 1s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Prefab 导出</h1>
+      <p>填写参数后，将 <code>ui_desc.json</code> 转为 Cocos Creator 2.4.13 / 3.8.8 的 <code>.prefab</code> 文件。</p>
+    </header>
+
+    <form id="exportForm" class="card grid">
+      <div>
+        <label for="exportSelect">已有导出（可选）</label>
+        <select id="exportSelect">
+          <option value="">— 手动输入路径 —</option>
+        </select>
+        <p class="hint">从 <code>psd_export/</code> 自动扫描；选择后会填充下方输入路径。</p>
+      </div>
+
+      <div>
+        <label for="inPath">ui_desc.json 路径 (--in) *</label>
+        <input id="inPath" name="inPath" type="text" placeholder="psd_export/bingoRule/0/ui_desc.json" required>
+      </div>
+
+      <div>
+        <label for="outPath">输出 prefab 路径 (--out) *</label>
+        <input id="outPath" name="outPath" type="text" placeholder="D:/Game/assets/prefabs/bingoRule.prefab" required>
+        <p class="hint">可为绝对路径，或相对于当前工作目录的路径。</p>
+      </div>
+
+      <div class="row-2">
+        <div>
+          <label for="cc">Cocos 版本 (--cc) *</label>
+          <select id="cc" name="cc" required>
+            <option value="2">2 — Cocos Creator 2.4.13</option>
+            <option value="3">3 — Cocos Creator 3.8.8</option>
+          </select>
+        </div>
+        <div>
+          <label for="assets">assets 目录 (--assets) *</label>
+          <input id="assets" name="assets" type="text" placeholder="D:/Game/assets" required>
+        </div>
+      </div>
+
+      <div>
+        <label for="fontMap">字体映射 (--font-map)</label>
+        <input id="fontMap" name="fontMap" type="text" placeholder="config/font-map.json">
+      </div>
+
+      <div class="check-row">
+        <input id="allowMissing" name="allowMissing" type="checkbox">
+        <label for="allowMissing">允许缺少 SpriteFrame meta (--allow-missing)</label>
+      </div>
+
+      <div class="actions">
+        <button type="submit" class="primary" id="submitBtn">导出 Prefab</button>
+        <button type="button" class="secondary" id="suggestBtn">建议输出路径</button>
+      </div>
+    </form>
+
+    <section class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <strong>运行日志</strong>
+        <span class="status"><span class="dot" id="statusDot"></span><span id="statusText">就绪</span></span>
+      </div>
+      <textarea id="log" readonly placeholder="导出结果与警告将显示在这里…"></textarea>
+    </section>
+  </div>
+
+  <script>
+    const form = document.getElementById("exportForm");
+    const exportSelect = document.getElementById("exportSelect");
+    const inPath = document.getElementById("inPath");
+    const outPath = document.getElementById("outPath");
+    const cc = document.getElementById("cc");
+    const assets = document.getElementById("assets");
+    const fontMap = document.getElementById("fontMap");
+    const allowMissing = document.getElementById("allowMissing");
+    const log = document.getElementById("log");
+    const submitBtn = document.getElementById("submitBtn");
+    const suggestBtn = document.getElementById("suggestBtn");
+    const statusDot = document.getElementById("statusDot");
+    const statusText = document.getElementById("statusText");
+
+    const STORAGE_KEY = "psd2desc-prefab-ui";
+
+    function setStatus(kind, text) {
+      statusDot.className = "dot" + (kind ? " " + kind : "");
+      statusText.textContent = text;
+    }
+
+    function appendLog(text) {
+      log.value = log.value ? log.value + "\n" + text : text;
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function savePrefs() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        inPath: inPath.value,
+        outPath: outPath.value,
+        cc: cc.value,
+        assets: assets.value,
+        fontMap: fontMap.value,
+        allowMissing: allowMissing.checked
+      }));
+    }
+
+    function loadPrefs() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const prefs = JSON.parse(raw);
+        if (prefs.inPath) inPath.value = prefs.inPath;
+        if (prefs.outPath) outPath.value = prefs.outPath;
+        if (prefs.cc) cc.value = prefs.cc;
+        if (prefs.assets) assets.value = prefs.assets;
+        if (prefs.fontMap) fontMap.value = prefs.fontMap;
+        if (prefs.allowMissing) allowMissing.checked = true;
+      } catch (_) {}
+    }
+
+    async function loadExports() {
+      const res = await fetch("/api/exports");
+      const data = await res.json();
+      if (data.defaultFontMap && !fontMap.value) {
+        fontMap.value = data.defaultFontMap;
+      }
+      for (const item of data.exports || []) {
+        const opt = document.createElement("option");
+        opt.value = item.inPath;
+        opt.textContent = item.label + "  →  " + item.inPath;
+        exportSelect.appendChild(opt);
+      }
+    }
+
+    exportSelect.addEventListener("change", () => {
+      if (exportSelect.value) {
+        inPath.value = exportSelect.value;
+        suggestOut();
+      }
+    });
+
+    async function suggestOut() {
+      const params = new URLSearchParams({ in: inPath.value, cc: cc.value });
+      const res = await fetch("/api/suggest-out?" + params);
+      const data = await res.json();
+      if (data.ok && data.outPath) {
+        outPath.value = data.outPath;
+      }
+    }
+
+    suggestBtn.addEventListener("click", () => {
+      suggestOut();
+    });
+
+    cc.addEventListener("change", () => {
+      if (inPath.value) suggestOut();
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      savePrefs();
+
+      submitBtn.disabled = true;
+      log.value = "";
+      setStatus("busy", "导出中…");
+
+      const payload = {
+        inPath: inPath.value.trim(),
+        outPath: outPath.value.trim(),
+        cc: cc.value,
+        assets: assets.value.trim(),
+        fontMap: fontMap.value.trim(),
+        allowMissing: allowMissing.checked
+      };
+
+      appendLog("请求参数:");
+      appendLog(JSON.stringify(payload, null, 2));
+      appendLog("");
+
+      try {
+        const res = await fetch("/api/export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+
+        if (result.warnings && result.warnings.length) {
+          appendLog("⚠️ 转换警告:");
+          result.warnings.forEach((w) => appendLog("   " + w));
+          appendLog("");
+        }
+        if (result.fontWarnings && result.fontWarnings.length) {
+          appendLog("⚠️ 字体警告:");
+          result.fontWarnings.forEach((w) => appendLog("   " + w));
+          appendLog("");
+        }
+        if (result.missing && result.missing.length) {
+          appendLog("❌ 缺少资源:");
+          result.missing.forEach((m) => appendLog("   " + m));
+          appendLog("");
+        }
+
+        if (result.ok) {
+          appendLog("✅ 导出成功");
+          appendLog("Prefab: " + result.prefabPath);
+          appendLog("Meta:   " + result.metaPath);
+          appendLog("UUID:   " + result.uuid);
+          appendLog("节点数: " + result.nodeCount);
+          appendLog("目标:   Cocos Creator " + result.ccLabel);
+          setStatus("ok", "导出成功");
+        } else {
+          appendLog("❌ " + (result.error || "导出失败"));
+          setStatus("err", "导出失败");
+        }
+      } catch (err) {
+        appendLog("❌ 请求失败: " + err.message);
+        setStatus("err", "请求失败");
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+
+    loadPrefs();
+    loadExports().catch((err) => {
+      appendLog("⚠️ 无法加载导出列表: " + err.message);
+    });
+  </script>
+</body>
+</html>

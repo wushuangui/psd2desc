@@ -49,6 +49,55 @@ function printUsage() {
 `);
 }
 
+function convertToPrefab(opts) {
+    const ccVersion = String(opts.cc);
+    if (ccVersion !== "2" && ccVersion !== "3") {
+        return { ok: false, error: "--cc 必须是 2 或 3" };
+    }
+
+    const inPath = path.resolve(opts.inPath);
+    const outPath = path.resolve(opts.outPath);
+    if (!fs.existsSync(inPath)) {
+        return { ok: false, error: `找不到输入文件: ${inPath}` };
+    }
+
+    const fontMapPath = path.resolve(opts.fontMap || path.join(__dirname, "config", "font-map.json"));
+    const strict = opts.strict !== false;
+
+    const rootDesc = fs.readJsonSync(inPath);
+    const { root, warnings } = buildIr(rootDesc);
+    const meta = new MetaResolver(opts.assets, fontMapPath);
+    const validation = meta.validateIr(root);
+
+    if (validation.missing.length && strict) {
+        return {
+            ok: false,
+            error: "缺少资源 meta / UUID",
+            warnings,
+            fontWarnings: validation.fontWarnings,
+            missing: validation.missing
+        };
+    }
+
+    const prefabArray = ccVersion === "2"
+        ? emitPrefab2x(root, meta)
+        : emitPrefab3x(root, meta);
+
+    const result = writePrefab(prefabArray, outPath, Number(ccVersion));
+    return {
+        ok: true,
+        prefabPath: result.prefabPath,
+        metaPath: result.metaPath,
+        uuid: result.uuid,
+        nodeCount: prefabArray.length,
+        ccVersion,
+        ccLabel: ccVersion === "2" ? "2.4.13" : "3.8.8",
+        warnings,
+        fontWarnings: validation.fontWarnings,
+        missing: validation.missing
+    };
+}
+
 function main() {
     const opts = parseArgs(process.argv);
     if (opts.help) {
@@ -61,50 +110,49 @@ function main() {
         process.exit(1);
     }
 
-    const ccVersion = String(opts.cc);
-    if (ccVersion !== "2" && ccVersion !== "3") {
-        console.error("❌ --cc 必须是 2 或 3");
+    let result;
+    try {
+        result = convertToPrefab(opts);
+    } catch (err) {
+        console.error("❌ 转换失败:", err.message);
         process.exit(1);
     }
 
-    const inPath = path.resolve(opts.inPath);
-    const outPath = path.resolve(opts.outPath);
-    if (!fs.existsSync(inPath)) {
-        console.error(`❌ 找不到输入文件: ${inPath}`);
-        process.exit(1);
-    }
-
-    const rootDesc = fs.readJsonSync(inPath);
-    const { root, warnings } = buildIr(rootDesc);
-    const meta = new MetaResolver(opts.assets, path.resolve(opts.fontMap));
-    const validation = meta.validateIr(root);
-
-    if (warnings.length) {
-        console.warn("⚠️ 转换警告:");
-        for (const w of warnings) console.warn(`   ${w}`);
-    }
-    if (validation.fontWarnings.length) {
-        console.warn("⚠️ 字体警告:");
-        for (const w of validation.fontWarnings) console.warn(`   ${w}`);
-    }
-    if (validation.missing.length) {
-        console.error("❌ 缺少资源 meta / UUID:");
-        for (const m of validation.missing) console.error(`   ${m}`);
-        if (opts.strict) {
-            process.exit(1);
+    if (!result.ok) {
+        if (result.warnings && result.warnings.length) {
+            console.warn("⚠️ 转换警告:");
+            for (const w of result.warnings) console.warn(`   ${w}`);
         }
+        if (result.fontWarnings && result.fontWarnings.length) {
+            console.warn("⚠️ 字体警告:");
+            for (const w of result.fontWarnings) console.warn(`   ${w}`);
+        }
+        if (result.missing && result.missing.length) {
+            console.error("❌ 缺少资源 meta / UUID:");
+            for (const m of result.missing) console.error(`   ${m}`);
+        }
+        console.error(`❌ ${result.error}`);
+        process.exit(1);
     }
 
-    const prefabArray = ccVersion === "2"
-        ? emitPrefab2x(root, meta)
-        : emitPrefab3x(root, meta);
+    if (result.warnings.length) {
+        console.warn("⚠️ 转换警告:");
+        for (const w of result.warnings) console.warn(`   ${w}`);
+    }
+    if (result.fontWarnings.length) {
+        console.warn("⚠️ 字体警告:");
+        for (const w of result.fontWarnings) console.warn(`   ${w}`);
+    }
+    if (result.missing.length) {
+        console.error("❌ 缺少资源 meta / UUID（已允许继续）:");
+        for (const m of result.missing) console.error(`   ${m}`);
+    }
 
-    const result = writePrefab(prefabArray, outPath, Number(ccVersion));
     console.log(`✅ Prefab: ${result.prefabPath}`);
     console.log(`📄 Meta:   ${result.metaPath}`);
     console.log(`🔑 UUID:   ${result.uuid}`);
-    console.log(`📦 节点数: ${prefabArray.length}`);
-    console.log(`🎯 目标:   Cocos Creator ${ccVersion === "2" ? "2.4.13" : "3.8.8"}`);
+    console.log(`📦 节点数: ${result.nodeCount}`);
+    console.log(`🎯 目标:   Cocos Creator ${result.ccLabel}`);
 }
 
 if (require.main === module) {
@@ -116,4 +164,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = { parseArgs, buildIr };
+module.exports = { parseArgs, buildIr, convertToPrefab };

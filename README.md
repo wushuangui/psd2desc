@@ -7,6 +7,7 @@
 | `psd2desc.js` | PSD/PSB → `ui_desc.json` + PNG |
 | `desc2html.js` | 单独为已有导出目录生成/刷新 `index.html` |
 | `desc2cocos.js` | `ui_desc.json` → `.prefab`（2.x / 3.x） |
+| `prefab-ui.js` | 本地 Web 页面，表单填写参数导出 Prefab |
 
 ## 环境
 
@@ -46,6 +47,7 @@ npm scripts：
 npm start              # node psd2desc.js
 npm run html -- psd_export/bingoRule/0   # 单独生成 HTML 预览
 npm run coco -- --in ... --out ... --cc 2 --assets ...
+npm run prefab-ui       # 启动 Prefab 导出 Web 页面（默认 http://127.0.0.1:3456）
 npm run test:coco      # 本地结构校验 + bingoRule 端到端测试
 ```
 
@@ -181,6 +183,32 @@ node desc2html.js psd_export/bingoRule/0
 ```
 
 页面支持适应窗口 / 100% 缩放，以及描边显示（区分 sprite / label / 其它节点）。
+
+---
+
+## prefab-ui.js（Web 导出页面）
+
+启动本地服务，在浏览器中填写参数导出 Prefab，等价于命令行 `desc2cocos.js`：
+
+```bash
+npm run prefab-ui
+# 浏览器打开 http://127.0.0.1:3456/
+```
+
+表单字段对应 CLI 参数：
+
+| 页面字段 | CLI 参数 |
+| --- | --- |
+| ui_desc.json 路径 | `--in` |
+| 输出 prefab 路径 | `--out` |
+| Cocos 版本 | `--cc`（2 或 3） |
+| assets 目录 | `--assets` |
+| 字体映射 | `--font-map`（默认 `config/font-map.json`） |
+| 允许缺少 meta | `--allow-missing` |
+
+页面会自动扫描 `psd_export/` 下已有的 `ui_desc.json` 供快速选择，并记住上次填写的路径（localStorage）。
+
+可通过环境变量 `PREFAB_UI_PORT` 修改端口。
 
 ---
 
