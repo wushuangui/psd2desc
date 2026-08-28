@@ -56,11 +56,35 @@ function cssGradient(effect) {
     return `linear-gradient(${cssAngle}deg,${stopCss})`;
 }
 
+function isTightSingleLineLabel(node) {
+    const text = String(node.text || "");
+    if (text.indexOf("\n") >= 0) return false;
+    const boxH = node.height || 0;
+    const fontSize = node.fontSize || 24;
+    const lineH = node.lineHeight || fontSize * 1.2;
+    return boxH > 0 && lineH > boxH * 1.1;
+}
+
+function isWrappingParagraph(node) {
+    if (!node || !node.paragraph) return false;
+    const text = String(node.text || "");
+    if (text.indexOf("\n") >= 0) return true;
+    if (isTightSingleLineLabel(node)) return false;
+    const fontSize = node.fontSize || 24;
+    const visual = text.replace(/[\u200b\uFEFF]/g, "");
+    const n = [...visual].length;
+    const est = n * fontSize + Math.max(0, n - 1) * (node.letterSpacing || 0);
+    return est > (node.width || 0) * 1.15;
+}
+
 function applyTextEffects(style, node) {
     const effects = node.effects;
     if (!effects) return { hasGradientStroke: false, hasGradientFill: false };
     let hasGradientStroke = false;
-    const gradientHeight = Math.max(1, Math.round(node.fontSize || 24));
+    const stroke = effects.stroke;
+    const strokeSize = (stroke && stroke.enabled && stroke.size > 0) ? stroke.size : 0;
+    const cssStrokeSize = stroke && stroke.position === "outside" ? strokeSize * 2 : strokeSize;
+    const gradientHeight = Math.max(1, Math.round((node.fontSize || 24) + cssStrokeSize));
 
     const overlay = effects.colorOverlay;
     if (overlay && overlay.enabled && overlay.color) {
@@ -80,9 +104,7 @@ function applyTextEffects(style, node) {
         style.push("-webkit-text-fill-color:transparent");
     }
 
-    const stroke = effects.stroke;
     if (stroke && stroke.enabled && stroke.size > 0) {
-        const cssStrokeSize = stroke.position === "outside" ? stroke.size * 2 : stroke.size;
         const strokeGradient = stroke.gradient && stroke.fillType !== "color"
             ? cssGradient(stroke)
             : "";
@@ -419,8 +441,9 @@ function filterLabelLines(text, label, siblings, useAbsoluteLines) {
 function renderLabelTextContent(text, label, siblings, useAbsoluteLines) {
     const lines = filterLabelLines(text, label, siblings, useAbsoluteLines);
     const spriteHeights = label ? spriteHeightsForLabel(label, siblings || []) : {};
+    const fontSize = (label && label.fontSize) || 24;
     const lineHeight = label
-        ? (label.lineHeight || (label.fontSize || 24) * 1.2)
+        ? Math.max(label.lineHeight || fontSize * 1.2, fontSize)
         : 24;
     const remap = useAbsoluteLines ? overlayLineRemap(label, siblings) : null;
     let subListIdx = 0;
@@ -446,7 +469,7 @@ function renderLabelTextContent(text, label, siblings, useAbsoluteLines) {
             if (!pos) pos = lineBottomInLabel(label, i, lines, spriteHeights);
             const style = [
                 `bottom:${Math.round(pos.bottom)}px`,
-                `height:${Math.round(pos.height)}px`,
+                `height:${Math.max(Math.round(pos.height), fontSize)}px`,
                 `line-height:${Math.round(lineHeight)}px`
             ];
             const cls = / {4,}/.test(line) ? "abs-line manual-line" : "abs-line";
@@ -473,7 +496,7 @@ function buildLabelStyle(node, parent, useAbsoluteLines) {
         `left:${left}px`,
         `bottom:${bottom}px`,
         `width:${node.width || 0}px`,
-        `height:${node.height || 0}px`,
+        `height:${Math.max(node.height || 0, node.fontSize || 24)}px`,
         `opacity:${opacity}`
     ];
     if (node.visible === false) style.push("display:none");
@@ -490,8 +513,10 @@ function buildLabelStyle(node, parent, useAbsoluteLines) {
         style.push(`letter-spacing:${node.letterSpacing}px`);
     }
     const textEffects = applyTextEffects(style, node);
-    const multiLine = node.paragraph || String(node.text || "").indexOf("\n") >= 0;
-    if (multiLine && node.lineHeight && !useAbsoluteLines) {
+    if (textEffects.hasGradientStroke || textEffects.hasGradientFill) {
+        style.push("line-height:1");
+    } else if ((isWrappingParagraph(node) || String(node.text || "").indexOf("\n") >= 0) &&
+        node.lineHeight && !useAbsoluteLines && !isTightSingleLineLabel(node)) {
         style.push(`line-height:${node.lineHeight}px`);
         const shift = (node.lineHeight - fontSize) / 2;
         if (shift > 0.5) style.push(`transform:translateY(${-Math.round(shift)}px)`);
@@ -503,9 +528,9 @@ function renderLabelHtml(node, parent, siblings, useAbsoluteLines) {
     const name = escapeHtml(node.name || "");
     const cls = ["layer", "label"].join(" ");
     const { style: baseStyle, textEffects } = buildLabelStyle(node, parent, false);
-    const absLines = useAbsoluteLines && node.paragraph && !textEffects.hasGradientStroke;
+    const absLines = useAbsoluteLines && isWrappingParagraph(node) && !textEffects.hasGradientStroke;
     const { style } = absLines ? buildLabelStyle(node, parent, true) : { style: baseStyle };
-    const paragraphClass = node.paragraph ? " paragraph" : "";
+    const paragraphClass = isWrappingParagraph(node) ? " paragraph" : "";
     const absClass = absLines ? " absolute-lines" : "";
     const effectClass = textEffects.hasGradientStroke
         ? `${cls}${paragraphClass}${absClass} gradient-stroke${textEffects.hasGradientFill ? " gradient-fill" : ""}`
@@ -671,7 +696,9 @@ function writePreviewHtml(rootDesc, exportDir) {
     inset: 0;
     white-space: inherit;
     font: inherit;
+    line-height: 1;
     letter-spacing: inherit;
+    overflow: visible;
     color: transparent;
     -webkit-text-fill-color: transparent;
     -webkit-text-stroke: var(--psd-stroke-width) transparent;
@@ -689,7 +716,9 @@ function writePreviewHtml(rootDesc, exportDir) {
     inset: 0;
     white-space: inherit;
     font: inherit;
+    line-height: 1;
     letter-spacing: inherit;
+    overflow: visible;
     color: var(--psd-fill-color);
     -webkit-text-fill-color: var(--psd-fill-color);
     -webkit-text-stroke: 0;

@@ -1294,11 +1294,16 @@ function walkLayer(layer, docHeight, usedNames) {
         if (t.bold) base.bold = true;
         if (t.fontFamily) base.fontFamily = t.fontFamily;
         // ShapeType=1 也可能用于很窄的编号列；只有内容确实需要换行时才启用段落排版，
-        // 避免把 “额外球：” 这类单行标题当成 1341px 宽段落，导致渐变按整框映射。
+        // 避免把 “额外球：” “开局赢奖：” 这类单行标题当成段落，行高大于盒子会把字裁掉。
         const textContent = String(t.text || "");
-        const estLineWidth = [...textContent.replace(/\n/g, "")].length * base.fontSize * 0.92;
-        if (t.paragraph && width >= base.fontSize * 4 &&
-            (textContent.indexOf("\n") >= 0 || estLineWidth > width * 0.92)) {
+        const hasNewline = textContent.indexOf("\n") >= 0;
+        const visualText = textContent.replace(/\n/g, "").replace(/[\u200b\uFEFF]/g, "");
+        const charCount = [...visualText].length;
+        const estLineWidth = charCount * base.fontSize +
+            Math.max(0, charCount - 1) * (base.letterSpacing || 0);
+        const tightTitle = !hasNewline && height > 0 && base.lineHeight > height * 1.1;
+        if (t.paragraph && !tightTitle && width >= base.fontSize * 4 &&
+            (hasNewline || estLineWidth > width * 1.15)) {
             base.paragraph = true;
         }
         if (layer.effects) base.effects = layer.effects;
