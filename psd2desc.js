@@ -519,6 +519,47 @@ function pickDominantStyle(raw, text) {
     return chunks[Math.min(bestIndex, chunks.length - 1)];
 }
 
+// Photoshop Justification: 0 左 / 1 右 / 2 中 / 3–6 两端对齐变体。
+function justificationToAlign(value) {
+    const j = Number(value);
+    if (j === 1 || j === 4) return "right";
+    if (j === 2 || j === 5) return "center";
+    return "left";
+}
+
+function pickDominantJustification(raw, text) {
+    const start = raw.indexOf("/ParagraphRun");
+    if (start < 0) return 0;
+    const section = raw.slice(start);
+    const styleRun = section.indexOf("/StyleRun");
+    const para = styleRun >= 0 ? section.slice(0, styleRun) : section.slice(0, 12000);
+    const runStart = para.indexOf("/RunArray");
+    if (runStart < 0) return engineNumber(para, "Justification") || 0;
+
+    const lenMatch = para.match(/\/RunLengthArray\s*\[([\d\s]+)\]/);
+    const runEnd = lenMatch ? para.indexOf(lenMatch[0], runStart) : para.length;
+    const runPart = para.slice(runStart, runEnd > runStart ? runEnd : para.length);
+    const chunks = runPart.split("/ParagraphSheet").slice(1);
+    const fallback = engineNumber(runPart, "Justification");
+    if (!lenMatch || !chunks.length) return fallback != null ? fallback : 0;
+
+    const lengths = lenMatch[1].trim().split(/\s+/).map(Number).filter(Number.isFinite);
+    let pos = 0;
+    let bestIndex = 0;
+    let bestWeight = -1;
+    for (let i = 0; i < lengths.length; i++) {
+        const seg = text.slice(pos, pos + lengths[i]);
+        pos += lengths[i];
+        const weight = (seg.match(/\S/g) || []).length;
+        if (weight > bestWeight) {
+            bestWeight = weight;
+            bestIndex = i;
+        }
+    }
+    const picked = engineNumber(chunks[Math.min(bestIndex, chunks.length - 1)], "Justification");
+    return picked != null ? picked : (fallback != null ? fallback : 0);
+}
+
 function descriptorBounds(value) {
     if (!value || typeof value !== "object") return null;
     const left = descriptorNumber(descriptorValue(value, "Left", "Left ", "left"), NaN);
@@ -616,6 +657,7 @@ function parseTypeToolText(data) {
         } catch (_) { /* 文本主体已解析，忽略不兼容的 warp 数据 */ }
 
         const visualFontSize = Math.max(1, fontSize * scale);
+        const align = justificationToAlign(pickDominantJustification(raw, parsedText));
         return {
             text,
             fontSize: visualFontSize,
@@ -627,6 +669,7 @@ function parseTypeToolText(data) {
             bold: engineBool(style, "FauxBold") === true,
             fontFamily: (fontIndex != null && fonts[fontIndex]) || fonts[0] || "",
             paragraph: isParagraph,
+            align,
             layoutBounds: transformBounds(localBounds, transform),
             glyphBounds: transformBounds(glyphBounds || localBounds, transform)
         };
@@ -1293,6 +1336,7 @@ function walkLayer(layer, docHeight, usedNames) {
         base.color = t.color || [255, 255, 255, 255];
         if (t.bold) base.bold = true;
         if (t.fontFamily) base.fontFamily = t.fontFamily;
+        if (t.align && t.align !== "left") base.align = t.align;
         // ShapeType=1 也可能用于很窄的编号列；只有内容确实需要换行时才启用段落排版，
         // 避免把 “额外球：” “开局赢奖：” 这类单行标题当成段落，行高大于盒子会把字裁掉。
         const textContent = String(t.text || "");

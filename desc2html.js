@@ -512,6 +512,9 @@ function buildLabelStyle(node, parent, useAbsoluteLines) {
     if (node.letterSpacing) {
         style.push(`letter-spacing:${node.letterSpacing}px`);
     }
+    if (node.align === "center" || node.align === "right") {
+        style.push(`text-align:${node.align}`);
+    }
     const textEffects = applyTextEffects(style, node);
     if (textEffects.hasGradientStroke || textEffects.hasGradientFill) {
         style.push("line-height:1");
