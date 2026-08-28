@@ -7,7 +7,8 @@ const { buildIr } = require("./lib/desc-ir");
 const { MetaResolver } = require("./lib/meta-resolver");
 const { emitPrefab2x } = require("./lib/emit-2x");
 const { emitPrefab3x } = require("./lib/emit-3x");
-const { writePrefab } = require("./lib/prefab-writer");
+const { writePrefab, readFileIdMap } = require("./lib/prefab-writer");
+const { sanitizePrefabArray } = require("./lib/prefab-sanitize");
 const { ensureMappedFontMetas } = require("./lib/asset-meta");
 
 function parseArgs(argv) {
@@ -28,6 +29,7 @@ function parseArgs(argv) {
         else if (arg === "--assets") opts.assets = argv[++i];
         else if (arg === "--font-map") opts.fontMap = argv[++i];
         else if (arg === "--allow-missing") opts.strict = false;
+        else if (arg === "--clean") opts.cleanPath = argv[++i];
         else if (arg === "--help" || arg === "-h") opts.help = true;
     }
     return opts;
@@ -43,11 +45,35 @@ function printUsage() {
   --assets       Cocos 工程 assets 根目录（必填）
   --font-map     字体映射 JSON，默认 config/font-map.json
   --allow-missing  缺少 SpriteFrame meta 时仍输出 prefab（默认缺少则失败；缺少字体会自动使用系统默认字体）
+  --clean          清理已有 .prefab（移除 _psdTextData、嵌套预制引用、孤立对象）
 
 示例:
   node desc2cocos.js --in psd_export/bingoRule/0/ui_desc.json --out D:/Game/assets/prefabs/bingoRule.prefab --cc 2 --assets D:/Game/assets
+  node desc2cocos.js --clean D:/Game/assets/prefabs/rule/8/8.prefab
   node desc2cocos.js --in psd_export/bingoRule/0/ui_desc.json --out D:/Game/assets/prefabs/bingoRule.prefab --cc 3 --assets D:/Game/assets
 `);
+}
+
+function cleanPrefabFile(prefabPath) {
+    const resolved = path.resolve(prefabPath);
+    if (!fs.existsSync(resolved)) {
+        return { ok: false, error: `找不到 prefab: ${resolved}` };
+    }
+
+    const before = fs.readJsonSync(resolved);
+    if (!Array.isArray(before)) {
+        return { ok: false, error: "prefab 格式无效" };
+    }
+
+    const after = sanitizePrefabArray(before);
+    fs.writeJsonSync(resolved, after, { spaces: 2 });
+    return {
+        ok: true,
+        prefabPath: resolved,
+        beforeCount: before.length,
+        afterCount: after.length,
+        removed: before.length - after.length
+    };
 }
 
 function convertToPrefab(opts) {
@@ -88,8 +114,8 @@ function convertToPrefab(opts) {
     }
 
     const prefabArray = ccVersion === "2"
-        ? emitPrefab2x(root, meta)
-        : emitPrefab3x(root, meta);
+        ? emitPrefab2x(root, meta, { fileIdMap: readFileIdMap(outPath, fs) })
+        : emitPrefab3x(root, meta, { fileIdMap: readFileIdMap(outPath, fs) });
 
     const result = writePrefab(prefabArray, outPath, Number(ccVersion));
     return {
@@ -97,7 +123,7 @@ function convertToPrefab(opts) {
         prefabPath: result.prefabPath,
         metaPath: result.metaPath,
         uuid: result.uuid,
-        nodeCount: prefabArray.length,
+        nodeCount: result.nodeCount,
         ccVersion,
         ccLabel: ccVersion === "2" ? "2.4.13" : "3.8.8",
         warnings,
@@ -111,6 +137,23 @@ function main() {
     const opts = parseArgs(process.argv);
     if (opts.help) {
         printUsage();
+        return;
+    }
+
+    if (opts.cleanPath) {
+        let result;
+        try {
+            result = cleanPrefabFile(opts.cleanPath);
+        } catch (err) {
+            console.error("❌ 清理失败:", err.message);
+            process.exit(1);
+        }
+        if (!result.ok) {
+            console.error(`❌ ${result.error}`);
+            process.exit(1);
+        }
+        console.log(`✅ 已清理: ${result.prefabPath}`);
+        console.log(`📦 对象数: ${result.beforeCount} → ${result.afterCount}（移除 ${result.removed}）`);
         return;
     }
 
@@ -173,4 +216,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = { parseArgs, buildIr, convertToPrefab };
+module.exports = { parseArgs, buildIr, convertToPrefab, cleanPrefabFile };
