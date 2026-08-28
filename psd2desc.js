@@ -1288,7 +1288,7 @@ function walkLayer(layer, docHeight, usedNames) {
         base.type = "label";
         base.text = t.text || "";
         base.fontSize = Math.max(1, Math.round(t.fontSize || 24));
-        base.lineHeight = Math.max(1, Math.round(t.lineHeight || base.fontSize * 1.2));
+        base.lineHeight = Math.max(1, Number((t.lineHeight || base.fontSize * 1.2).toFixed(2)));
         if (t.letterSpacing) base.letterSpacing = t.letterSpacing;
         base.color = t.color || [255, 255, 255, 255];
         if (t.bold) base.bold = true;
