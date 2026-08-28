@@ -1,0 +1,16 @@
+{
+  "name": "psd2desc",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Parse PSD layers and export Cocos Creator 2.x description JSON",
+  "main": "psd2desc.js",
+  "scripts": {
+    "start": "node psd2desc.js",
+    "html": "node desc2html.js"
+  },
+  "dependencies": {
+    "fs-extra": "^11.3.1",
+    "pngjs": "^7.0.0",
+    "psd": "^3.4.0"
+  }
+}

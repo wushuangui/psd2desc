@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Export output (generated JSON, PNG, HTML)
+psd_export/
+
+# Source design files (large binaries)
+psd/
+*.psd
+*.psb
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
