@@ -256,7 +256,7 @@ ui_desc.json
 | --- | --- | --- |
 | `node` / `group` | `cc.Node` | `cc.Node` + `cc.UITransform` + `cc.UIOpacity` |
 | `sprite` | `cc.Sprite` | `cc.Sprite` |
-| `label` | `cc.Label`（+ 可选 `cc.LabelOutline`） | 同左 |
+| `label` | `cc.Label`（+ 可选 `cc.LabelOutline` / `cc.LabelShadow`） | 同左 |
 
 坐标策略：统一锚点 `(0, 0)`（左下角），子节点位置 = 绝对坐标减去父节点绝对坐标，与 HTML 预览一致。
 
@@ -284,8 +284,9 @@ PSD 中的 `fontFamily` 与 Cocos TTF 资源不会自动对应，需手动配置
 
 ### desc2cocos 已知限制
 
-- **渐变描边 / 渐变叠加**等复杂 `effects` 不转换（控制台会 warning），需在 PSD 中栅格化为 sprite
-- **纯色描边**转为 `cc.LabelOutline`（2.x / 3.x 均支持）
+- **描边**转为 `cc.LabelOutline`（渐变描边取色标近似为纯色）
+- **投影**转为 `cc.LabelShadow`（按 PSD 角度/距离换算 offset，Y 轴向上）
+- **渐变叠加**（文字填充渐变）不转换，控制台会 warning；需在 PSD 中栅格化为 sprite
 - **paragraph: true** 的段落文本：`overflow = RESIZE_HEIGHT`，并启用换行
 - prefab 在编辑器中若报 UUID 错误，通常是 PNG 未 import 或 `font-map.json` 路径错误
 - 建议在编辑器中打开 prefab，与同目录 `index.html` 预览对照位置和层级
