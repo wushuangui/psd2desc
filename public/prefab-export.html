@@ -190,15 +190,14 @@
   <div class="wrap">
     <header>
       <h1>Prefab 导出</h1>
-      <p>选择 PSD/PSB 并填写 Cocos 工程路径，将自动解析图层、复制纹理并导出 Cocos Creator 2.4.13 / 3.8.8 的 <code>.prefab</code>。</p>
+      <p>填写 PSD/PSB 本机路径与 Cocos 工程路径，将自动解析图层、复制纹理并导出 Cocos Creator 2.4.13 / 3.8.8 的 <code>.prefab</code>。</p>
     </header>
 
     <form id="exportForm" class="card grid">
       <div>
-        <label for="psdFile">PSD / PSB 文件 *</label>
-        <input id="psdFile" name="psdFile" type="file" accept=".psd,.psb,image/vnd.adobe.photoshop" required>
-        <p class="hint">选择文件后会缓存到项目 <code>psd/</code>；中间产物（<code>ui_desc.json</code>、PNG）写入 <code>psd_export/</code>，无需手动填写。</p>
-        <input id="psdPath" name="psdPath" type="hidden">
+        <label for="psdPath">PSD / PSB 文件路径 *</label>
+        <input id="psdPath" name="psdPath" type="text" placeholder="D:/design/bingoRule.psb" required>
+        <p class="hint">填写本机 PSD/PSB 绝对路径；中间产物（<code>ui_desc.json</code>、PNG）写入 <code>psd_export/</code>，无需手动填写。</p>
       </div>
 
       <div class="row-2">
@@ -256,7 +255,6 @@
 
   <script>
     const form = document.getElementById("exportForm");
-    const psdFile = document.getElementById("psdFile");
     const psdPath = document.getElementById("psdPath");
     const prefabDir = document.getElementById("prefabDir");
     const prefabName = document.getElementById("prefabName");
@@ -320,11 +318,6 @@
     }
 
     suggestBtn.addEventListener("click", () => {
-      const file = psdFile.files && psdFile.files[0];
-      if (file) {
-        prefabName.value = basenameNoExt(file.name);
-        return;
-      }
       fillNameFromPsd();
       suggestPrefabDir();
     });
@@ -343,24 +336,8 @@
       prefabDir.value = assetsRoot + sep + "prefabs";
     }
 
-    async function uploadPsdFile(file) {
-      const res = await fetch("/api/upload-psd", {
-        method: "POST",
-        headers: { "X-Filename": file.name },
-        body: file
-      });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error || "PSD 上传失败");
-      psdPath.value = data.relPath;
-      return data;
-    }
-
-    psdFile.addEventListener("change", () => {
-      const file = psdFile.files && psdFile.files[0];
-      if (!file) return;
-      if (!prefabName.value.trim()) {
-        prefabName.value = basenameNoExt(file.name);
-      }
+    psdPath.addEventListener("change", () => {
+      if (!prefabName.value.trim()) fillNameFromPsd();
     });
 
     texturePath.addEventListener("change", suggestPrefabDir);
@@ -370,10 +347,15 @@
       e.preventDefault();
       savePrefs();
 
-      const file = psdFile.files && psdFile.files[0];
-      if (!file && !psdPath.value.trim()) {
-        appendLog("❌ 请选择 PSD / PSB 文件");
-        setStatus("err", "缺少 PSD 文件");
+      const psdFilePath = psdPath.value.trim();
+      if (!psdFilePath) {
+        appendLog("❌ 请填写 PSD / PSB 文件路径");
+        setStatus("err", "缺少 PSD 路径");
+        return;
+      }
+      if (!/\.(psd|psb)$/i.test(psdFilePath.replace(/\\/g, "/"))) {
+        appendLog("❌ 请填写 .psd 或 .psb 文件路径");
+        setStatus("err", "文件类型不正确");
         return;
       }
 
@@ -382,15 +364,8 @@
       setStatus("busy", "导出中…");
 
       try {
-        if (file) {
-          appendLog("上传 PSD: " + file.name);
-          const uploaded = await uploadPsdFile(file);
-          appendLog("已缓存: " + uploaded.relPath);
-          appendLog("");
-        }
-
         const payload = {
-          psdPath: psdPath.value.trim(),
+          psdPath: psdFilePath,
           prefabDir: prefabDir.value.trim(),
           prefabName: prefabName.value.trim(),
           cc: cc.value,

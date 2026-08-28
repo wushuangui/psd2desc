@@ -70,24 +70,6 @@ function listPsdFiles() {
         }));
 }
 
-function saveUploadedPsd(filename, buffer) {
-    const safeName = path.basename(String(filename || "").trim());
-    if (!/\.(psd|psb)$/i.test(safeName)) {
-        throw new Error("仅支持 .psd / .psb 文件");
-    }
-    fs.ensureDirSync(PSD_DIR);
-    const dest = path.join(PSD_DIR, safeName);
-    if (fs.existsSync(dest)) {
-        fs.removeSync(dest);
-    }
-    fs.writeFileSync(dest, buffer);
-    return {
-        name: safeName,
-        relPath: `psd/${safeName}`,
-        absPath: dest
-    };
-}
-
 function resolvePsdPath(psdPath) {
     const raw = String(psdPath || "").trim();
     if (!raw) return "";
@@ -305,23 +287,6 @@ async function handleRequest(req, res) {
         return;
     }
 
-    if (req.method === "POST" && url.pathname === "/api/upload-psd") {
-        try {
-            const filename = req.headers["x-filename"] || req.headers["x-filename".toLowerCase()];
-            if (!filename) {
-                sendJson(res, 400, { ok: false, error: "缺少 X-Filename 请求头" });
-                return;
-            }
-            const chunks = [];
-            for await (const chunk of req) chunks.push(chunk);
-            const saved = saveUploadedPsd(filename, Buffer.concat(chunks));
-            sendJson(res, 200, { ok: true, ...saved });
-        } catch (err) {
-            sendJson(res, 400, { ok: false, error: err.message });
-        }
-        return;
-    }
-
     if (req.method === "POST" && url.pathname === "/api/export") {
         try {
             const body = await readJsonBody(req);
@@ -369,6 +334,5 @@ module.exports = {
     resolveAssetDir,
     buildOutPath,
     listPsdFiles,
-    saveUploadedPsd,
     handleExport
 };
