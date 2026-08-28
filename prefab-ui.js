@@ -6,6 +6,7 @@ const http = require("http");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const { convertToPrefab } = require("./desc2cocos");
+const { ensureImageMeta, ensureMappedFontMetas } = require("./lib/asset-meta");
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
@@ -141,12 +142,14 @@ function runPsd2Desc(psdFile) {
     };
 }
 
-function copyTextures(exportDir, destDir) {
+function copyTextures(exportDir, destDir, ccVersion) {
     fs.ensureDirSync(destDir);
     const copied = [];
     for (const name of fs.readdirSync(exportDir)) {
         if (!/\.png$/i.test(name)) continue;
-        fs.copySync(path.join(exportDir, name), path.join(destDir, name), { overwrite: true });
+        const dest = path.join(destDir, name);
+        fs.copySync(path.join(exportDir, name), dest, { overwrite: true });
+        ensureImageMeta(dest, ccVersion);
         copied.push(name);
     }
     return { destDir, copied };
@@ -236,7 +239,7 @@ async function handleExport(body) {
         return { ok: false, error: `PSD 解析失败: ${err.message}` };
     }
 
-    const textureCopy = copyTextures(exportDir, textureDir.abs);
+    const textureCopy = copyTextures(exportDir, textureDir.abs, cc);
 
     let inPath = uiDescPath;
     if (textureDir.rel !== DEFAULT_TEXTURE_SUB_PATH) {
@@ -248,6 +251,7 @@ async function handleExport(body) {
     }
 
     const fontMap = buildFontMapForAssets(DEFAULT_FONT_MAP, assetsRoot, fontsDir.rel);
+    ensureMappedFontMetas(fontMap, assetsRoot, cc);
 
     const result = convertToPrefab({
         inPath,
@@ -337,6 +341,16 @@ function main() {
         handleRequest(req, res).catch((err) => {
             sendJson(res, 500, { ok: false, error: err.message });
         });
+    });
+
+    server.on("error", (err) => {
+        if (err.code === "EADDRINUSE") {
+            console.error(`❌ 端口 ${PORT} 已被占用，请先关闭旧的 prefab-ui 进程，或设置环境变量 PREFAB_UI_PORT 使用其他端口。`);
+            console.error(`   示例: set PREFAB_UI_PORT=3457 && npm run prefab-ui`);
+        } else {
+            console.error("❌ 服务启动失败:", err.message);
+        }
+        process.exit(1);
     });
 
     server.listen(PORT, "127.0.0.1", () => {
