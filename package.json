@@ -2,11 +2,13 @@
   "name": "psd2desc",
   "version": "1.0.0",
   "private": true,
-  "description": "Parse PSD layers and export Cocos Creator 2.x description JSON",
+  "description": "Parse PSD layers to ui_desc JSON, HTML preview, and Cocos Creator 2.4.13 / 3.8.8 prefabs",
   "main": "psd2desc.js",
   "scripts": {
     "start": "node psd2desc.js",
-    "html": "node desc2html.js"
+    "html": "node desc2html.js",
+    "coco": "node desc2cocos.js",
+    "test:coco": "node test/validate-desc2cocos.js"
   },
   "dependencies": {
     "fs-extra": "^11.3.1",

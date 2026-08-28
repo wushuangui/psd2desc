@@ -1408,7 +1408,7 @@ function uniqueName(name, used) {
         console.log(`   1.通过参数传入 PSD/PSB，例如: node psd2desc.js bingoRule.psb`);
         console.log(`   2.组名带 #raster# 的组不会导出图片，需要你PS手动盖印导出 <英文组名>.png 放入 resources/${RESOURCES_SUB_PATH}/`);
         console.log(`   3.把 ${EXPORT_DIR}/ 下所有png复制到 Cocos assets/resources/${RESOURCES_SUB_PATH}/`);
-        console.log(`   4.使用编辑器扩展 main.ts 读取 ${jsonOutPath} 生成prefab`);
+        console.log(`   4.运行 node desc2cocos.js --in ${jsonOutPath} --out <prefab路径> --cc 2|3 --assets <Cocos/assets>`);
         console.log(`   5.浏览器打开 ${path.join(EXPORT_DIR, "index.html")} 预览`);
     } catch (err) {
         console.error("❌解析失败：", err);

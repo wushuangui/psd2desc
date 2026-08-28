@@ -3,6 +3,8 @@ node_modules/
 
 # Export output (generated JSON, PNG, HTML)
 psd_export/
+test/
+config/
 
 # Source design files (large binaries)
 psd/
