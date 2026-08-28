@@ -1,6 +1,7 @@
 const fs = require("fs-extra");
 const path = require("path");
 const { PNG } = require("pngjs");
+const { pinyin } = require("pinyin-pro");
 const { cleanGroupLabelText, writePreviewHtml } = require("./desc2html");
 
 // ========== 配置区 ==========
@@ -122,8 +123,97 @@ function psdYToCocosY(psdTop, layerH, docH) {
     return docH - psdTop - layerH;
 }
 
+// 常见 PSD 自动图层名 / UI 用词，按长词优先替换，避免「组」先吃掉「组合」。
+const CJK_NAME_TERMS = [
+    ["智能对象", "smartobject"],
+    ["矢量蒙版", "vectormask"],
+    ["圆角矩形", "roundrect"],
+    ["图层样式", "layerstyle"],
+    ["颜色叠加", "coloroverlay"],
+    ["渐变叠加", "gradientoverlay"],
+    ["颜色填充", "colorfill"],
+    ["渐变填充", "gradientfill"],
+    ["图案填充", "patternfill"],
+    ["外发光", "outerglow"],
+    ["内发光", "innerglow"],
+    ["内阴影", "innershadow"],
+    ["投影", "dropshadow"],
+    ["图层", "layer"],
+    ["图像", "image"],
+    ["组合", "group"],
+    ["拷贝", "copy"],
+    ["副本", "copy"],
+    ["形状", "shape"],
+    ["矩形", "rect"],
+    ["椭圆", "ellipse"],
+    ["圆形", "circle"],
+    ["多边形", "polygon"],
+    ["直线", "line"],
+    ["箭头", "arrow"],
+    ["文字", "text"],
+    ["文本", "text"],
+    ["背景", "bg"],
+    ["前景", "fg"],
+    ["蒙版", "mask"],
+    ["路径", "path"],
+    ["矢量", "vector"],
+    ["填充", "fill"],
+    ["描边", "stroke"],
+    ["效果", "effect"],
+    ["光效", "glow"],
+    ["阴影", "shadow"],
+    ["高光", "highlight"],
+    ["图标", "icon"],
+    ["按钮", "btn"],
+    ["标题", "title"],
+    ["关闭", "close"],
+    ["打开", "open"],
+    ["返回", "back"],
+    ["确定", "ok"],
+    ["取消", "cancel"],
+    ["提示", "tip"],
+    ["规则", "rule"],
+    ["奖励", "reward"],
+    ["装饰", "deco"],
+    ["边框", "frame"],
+    ["底图", "base"],
+    ["组", "group"]
+];
+
+function toHalfWidth(str) {
+    return String(str).replace(/[\uFF01-\uFF5E]/g, (ch) =>
+        String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)
+    ).replace(/\u3000/g, " ");
+}
+
+function hasNonAscii(str) {
+    return /[^\x00-\x7F]/.test(str);
+}
+
 function safeFileName(str) {
-    return String(str || "unnamed").replace(/[\\\/:*?"<>|]/g, "_").trim() || "unnamed";
+    let s = toHalfWidth(String(str || "")).replace(/#raster#/gi, "").trim();
+    if (!s) return "unnamed";
+
+    for (const [cn, en] of CJK_NAME_TERMS) {
+        if (s.indexOf(cn) >= 0) s = s.split(cn).join(en);
+    }
+
+    if (hasNonAscii(s)) {
+        try {
+            s = pinyin(s, {
+                toneType: "none",
+                type: "string",
+                separator: "",
+                nonZh: "consecutive",
+                v: true
+            });
+        } catch (_) {
+            s = s.replace(/[^\x00-\x7F]/g, "");
+        }
+    }
+
+    s = String(s || "").replace(/[^a-zA-Z0-9]/g, "");
+    return s || "unnamed";
 }
 
 function parseCliArgs() {
@@ -1154,6 +1244,7 @@ function unionGroupBounds(node) {
 function walkLayer(layer, docHeight, usedNames) {
     if (layer.hidden) return null;
 
+    const rasterMark = /#raster#/i.test(String(layer.name || ""));
     const name = uniqueName(safeFileName(layer.name), usedNames);
     const width = layer.width || 0;
     const height = layer.height || 0;
@@ -1175,7 +1266,7 @@ function walkLayer(layer, docHeight, usedNames) {
 
     if (layer.isGroup) {
         base.type = "group";
-        if (name.includes("#raster#")) {
+        if (rasterMark) {
             base.type = "sprite";
             base.spriteFramePath = `${RESOURCES_SUB_PATH}/${name}.png`;
             base.children = [];
@@ -1310,7 +1401,7 @@ function uniqueName(name, used) {
         console.log(`📁 PSD: ${psdFile}`);
         console.log(`💡提示：`);
         console.log(`   1.通过参数传入 PSD/PSB，例如: node psd2desc.js bingoRule.psb`);
-        console.log(`   2.组名带 #raster# 的组不会导出图片，需要你PS手动盖印导出 <组名>.png 放入 resources/${RESOURCES_SUB_PATH}/`);
+        console.log(`   2.组名带 #raster# 的组不会导出图片，需要你PS手动盖印导出 <英文组名>.png 放入 resources/${RESOURCES_SUB_PATH}/`);
         console.log(`   3.把 ${EXPORT_DIR}/ 下所有png复制到 Cocos assets/resources/${RESOURCES_SUB_PATH}/`);
         console.log(`   4.使用编辑器扩展 main.ts 读取 ${jsonOutPath} 生成prefab`);
         console.log(`   5.浏览器打开 ${path.join(EXPORT_DIR, "index.html")} 预览`);
