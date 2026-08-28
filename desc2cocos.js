@@ -8,6 +8,7 @@ const { MetaResolver } = require("./lib/meta-resolver");
 const { emitPrefab2x } = require("./lib/emit-2x");
 const { emitPrefab3x } = require("./lib/emit-3x");
 const { writePrefab } = require("./lib/prefab-writer");
+const { ensureMappedFontMetas } = require("./lib/asset-meta");
 
 function parseArgs(argv) {
     const opts = {
@@ -41,7 +42,7 @@ function printUsage() {
   --cc           Cocos 版本：2（2.4.13）或 3（3.8.8）（必填）
   --assets       Cocos 工程 assets 根目录（必填）
   --font-map     字体映射 JSON，默认 config/font-map.json
-  --allow-missing  缺少 SpriteFrame meta 时仍输出 prefab（默认缺少则失败）
+  --allow-missing  缺少 SpriteFrame meta 时仍输出 prefab（默认缺少则失败；缺少字体会自动使用系统默认字体）
 
 示例:
   node desc2cocos.js --in psd_export/bingoRule/0/ui_desc.json --out D:/Game/assets/prefabs/bingoRule.prefab --cc 2 --assets D:/Game/assets
@@ -66,15 +67,22 @@ function convertToPrefab(opts) {
 
     const rootDesc = fs.readJsonSync(inPath);
     const { root, warnings } = buildIr(rootDesc);
+    const fontSetup = ensureMappedFontMetas(fontMapPath, opts.assets, ccVersion);
     const meta = new MetaResolver(opts.assets, fontMapPath);
     const validation = meta.validateIr(root);
+    const fontWarnings = [
+        ...fontSetup.copiedFromSystem.map(
+            (item) => `已从系统字体复制: ${item.rel} <- ${item.source}`
+        ),
+        ...validation.fontWarnings
+    ];
 
     if (validation.missing.length && strict) {
         return {
             ok: false,
             error: "缺少资源 meta / UUID",
             warnings,
-            fontWarnings: validation.fontWarnings,
+            fontWarnings,
             missing: validation.missing
         };
     }
@@ -93,8 +101,9 @@ function convertToPrefab(opts) {
         ccVersion,
         ccLabel: ccVersion === "2" ? "2.4.13" : "3.8.8",
         warnings,
-        fontWarnings: validation.fontWarnings,
-        missing: validation.missing
+        fontWarnings,
+        missing: validation.missing,
+        fontSetup
     };
 }
 

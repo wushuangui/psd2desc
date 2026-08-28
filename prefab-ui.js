@@ -6,7 +6,7 @@ const http = require("http");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const { convertToPrefab } = require("./desc2cocos");
-const { ensureImageMeta, ensureMappedFontMetas } = require("./lib/asset-meta");
+const { ensureImageMeta } = require("./lib/asset-meta");
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
@@ -233,7 +233,6 @@ async function handleExport(body) {
     }
 
     const fontMap = buildFontMapForAssets(DEFAULT_FONT_MAP, assetsRoot, fontsDir.rel);
-    ensureMappedFontMetas(fontMap, assetsRoot, cc);
 
     const result = convertToPrefab({
         inPath,
