@@ -190,46 +190,48 @@
   <div class="wrap">
     <header>
       <h1>Prefab 导出</h1>
-      <p>填写参数后，将 <code>ui_desc.json</code> 转为 Cocos Creator 2.4.13 / 3.8.8 的 <code>.prefab</code> 文件。</p>
+      <p>选择 PSD/PSB 并填写 Cocos 工程路径，将自动解析图层、复制纹理并导出 Cocos Creator 2.4.13 / 3.8.8 的 <code>.prefab</code>。</p>
     </header>
 
     <form id="exportForm" class="card grid">
       <div>
-        <label for="exportSelect">已有导出（可选）</label>
-        <select id="exportSelect">
-          <option value="">— 手动输入路径 —</option>
-        </select>
-        <p class="hint">从 <code>psd_export/</code> 自动扫描；选择后会填充下方输入路径。</p>
-      </div>
-
-      <div>
-        <label for="inPath">ui_desc.json 路径 (--in) *</label>
-        <input id="inPath" name="inPath" type="text" placeholder="psd_export/bingoRule/0/ui_desc.json" required>
-      </div>
-
-      <div>
-        <label for="outPath">输出 prefab 路径 (--out) *</label>
-        <input id="outPath" name="outPath" type="text" placeholder="D:/Game/assets/prefabs/bingoRule.prefab" required>
-        <p class="hint">可为绝对路径，或相对于当前工作目录的路径。</p>
+        <label for="psdFile">PSD / PSB 文件 *</label>
+        <input id="psdFile" name="psdFile" type="file" accept=".psd,.psb,image/vnd.adobe.photoshop" required>
+        <p class="hint">选择文件后会缓存到项目 <code>psd/</code>；中间产物（<code>ui_desc.json</code>、PNG）写入 <code>psd_export/</code>，无需手动填写。</p>
+        <input id="psdPath" name="psdPath" type="hidden">
       </div>
 
       <div class="row-2">
         <div>
-          <label for="cc">Cocos 版本 (--cc) *</label>
+          <label for="prefabDir">预制体保存目录 *</label>
+          <input id="prefabDir" name="prefabDir" type="text" placeholder="D:/Game/assets/prefabs" required>
+        </div>
+        <div>
+          <label for="prefabName">预制体名称 *</label>
+          <input id="prefabName" name="prefabName" type="text" placeholder="bingoRule" required>
+        </div>
+      </div>
+      <p class="hint">输出文件为「保存目录 / 预制体名称.prefab」；assets 根目录会从保存路径中自动识别。</p>
+
+      <div class="row-2">
+        <div>
+          <label for="cc">Cocos 版本 *</label>
           <select id="cc" name="cc" required>
             <option value="2">2 — Cocos Creator 2.4.13</option>
             <option value="3">3 — Cocos Creator 3.8.8</option>
           </select>
         </div>
         <div>
-          <label for="assets">assets 目录 (--assets) *</label>
-          <input id="assets" name="assets" type="text" placeholder="D:/Game/assets" required>
+          <label for="texturePath">纹理资源目录 *</label>
+          <input id="texturePath" name="texturePath" type="text" placeholder="D:/Game/assets/images/rule/1" required>
         </div>
       </div>
+      <p class="hint">填写本机绝对路径（须在 assets 目录下）；导出 PNG 将复制到该目录，并与 prefab 中 Sprite 引用路径一致。</p>
 
       <div>
-        <label for="fontMap">字体映射 (--font-map)</label>
-        <input id="fontMap" name="fontMap" type="text" placeholder="config/font-map.json">
+        <label for="fontsPath">字体资源目录 *</label>
+        <input id="fontsPath" name="fontsPath" type="text" placeholder="D:/Game/assets/images/fonts" required>
+        <p class="hint">填写本机绝对路径（须在 assets 目录下）；Label 字体 UUID 从该目录下的 <code>.meta</code> 读取；字体族名映射见 <code>config/font-map.json</code>。</p>
       </div>
 
       <div class="check-row">
@@ -239,7 +241,7 @@
 
       <div class="actions">
         <button type="submit" class="primary" id="submitBtn">导出 Prefab</button>
-        <button type="button" class="secondary" id="suggestBtn">建议输出路径</button>
+        <button type="button" class="secondary" id="suggestBtn">从 PSD 填充名称</button>
       </div>
     </form>
 
@@ -254,12 +256,13 @@
 
   <script>
     const form = document.getElementById("exportForm");
-    const exportSelect = document.getElementById("exportSelect");
-    const inPath = document.getElementById("inPath");
-    const outPath = document.getElementById("outPath");
+    const psdFile = document.getElementById("psdFile");
+    const psdPath = document.getElementById("psdPath");
+    const prefabDir = document.getElementById("prefabDir");
+    const prefabName = document.getElementById("prefabName");
     const cc = document.getElementById("cc");
-    const assets = document.getElementById("assets");
-    const fontMap = document.getElementById("fontMap");
+    const texturePath = document.getElementById("texturePath");
+    const fontsPath = document.getElementById("fontsPath");
     const allowMissing = document.getElementById("allowMissing");
     const log = document.getElementById("log");
     const submitBtn = document.getElementById("submitBtn");
@@ -279,13 +282,19 @@
       log.scrollTop = log.scrollHeight;
     }
 
+    function basenameNoExt(filePath) {
+      const base = String(filePath || "").replace(/\\/g, "/").split("/").pop() || "";
+      return base.replace(/\.(psd|psb)$/i, "");
+    }
+
     function savePrefs() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        inPath: inPath.value,
-        outPath: outPath.value,
+        psdPath: psdPath.value,
+        prefabDir: prefabDir.value,
+        prefabName: prefabName.value,
         cc: cc.value,
-        assets: assets.value,
-        fontMap: fontMap.value,
+        texturePath: texturePath.value,
+        fontsPath: fontsPath.value,
         allowMissing: allowMissing.checked
       }));
     }
@@ -295,75 +304,104 @@
         const raw = localStorage.getItem(STORAGE_KEY);
         if (!raw) return;
         const prefs = JSON.parse(raw);
-        if (prefs.inPath) inPath.value = prefs.inPath;
-        if (prefs.outPath) outPath.value = prefs.outPath;
+        if (prefs.psdPath) psdPath.value = prefs.psdPath;
+        if (prefs.prefabDir) prefabDir.value = prefs.prefabDir;
+        if (prefs.prefabName) prefabName.value = prefs.prefabName;
         if (prefs.cc) cc.value = prefs.cc;
-        if (prefs.assets) assets.value = prefs.assets;
-        if (prefs.fontMap) fontMap.value = prefs.fontMap;
+        if (prefs.texturePath) texturePath.value = prefs.texturePath;
+        if (prefs.fontsPath) fontsPath.value = prefs.fontsPath;
         if (prefs.allowMissing) allowMissing.checked = true;
       } catch (_) {}
     }
 
-    async function loadExports() {
-      const res = await fetch("/api/exports");
-      const data = await res.json();
-      if (data.defaultFontMap && !fontMap.value) {
-        fontMap.value = data.defaultFontMap;
-      }
-      for (const item of data.exports || []) {
-        const opt = document.createElement("option");
-        opt.value = item.inPath;
-        opt.textContent = item.label + "  →  " + item.inPath;
-        exportSelect.appendChild(opt);
-      }
-    }
-
-    exportSelect.addEventListener("change", () => {
-      if (exportSelect.value) {
-        inPath.value = exportSelect.value;
-        suggestOut();
-      }
-    });
-
-    async function suggestOut() {
-      const params = new URLSearchParams({ in: inPath.value, cc: cc.value });
-      const res = await fetch("/api/suggest-out?" + params);
-      const data = await res.json();
-      if (data.ok && data.outPath) {
-        outPath.value = data.outPath;
-      }
+    function fillNameFromPsd() {
+      const name = basenameNoExt(psdPath.value.trim());
+      if (name) prefabName.value = name;
     }
 
     suggestBtn.addEventListener("click", () => {
-      suggestOut();
+      const file = psdFile.files && psdFile.files[0];
+      if (file) {
+        prefabName.value = basenameNoExt(file.name);
+        return;
+      }
+      fillNameFromPsd();
+      suggestPrefabDir();
     });
 
-    cc.addEventListener("change", () => {
-      if (inPath.value) suggestOut();
+    function deriveAssetsRootFromPath(dirPath) {
+      const normalized = String(dirPath || "").replace(/\\/g, "/");
+      const match = normalized.match(/^(.*\/assets)(?:\/|$)/i);
+      return match ? match[1] : "";
+    }
+
+    function suggestPrefabDir() {
+      if (prefabDir.value.trim()) return;
+      const assetsRoot = deriveAssetsRootFromPath(texturePath.value.trim());
+      if (!assetsRoot) return;
+      const sep = assetsRoot.includes("\\") ? "\\" : "/";
+      prefabDir.value = assetsRoot + sep + "prefabs";
+    }
+
+    async function uploadPsdFile(file) {
+      const res = await fetch("/api/upload-psd", {
+        method: "POST",
+        headers: { "X-Filename": file.name },
+        body: file
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "PSD 上传失败");
+      psdPath.value = data.relPath;
+      return data;
+    }
+
+    psdFile.addEventListener("change", () => {
+      const file = psdFile.files && psdFile.files[0];
+      if (!file) return;
+      if (!prefabName.value.trim()) {
+        prefabName.value = basenameNoExt(file.name);
+      }
     });
+
+    texturePath.addEventListener("change", suggestPrefabDir);
+    texturePath.addEventListener("blur", suggestPrefabDir);
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       savePrefs();
 
+      const file = psdFile.files && psdFile.files[0];
+      if (!file && !psdPath.value.trim()) {
+        appendLog("❌ 请选择 PSD / PSB 文件");
+        setStatus("err", "缺少 PSD 文件");
+        return;
+      }
+
       submitBtn.disabled = true;
       log.value = "";
       setStatus("busy", "导出中…");
 
-      const payload = {
-        inPath: inPath.value.trim(),
-        outPath: outPath.value.trim(),
-        cc: cc.value,
-        assets: assets.value.trim(),
-        fontMap: fontMap.value.trim(),
-        allowMissing: allowMissing.checked
-      };
-
-      appendLog("请求参数:");
-      appendLog(JSON.stringify(payload, null, 2));
-      appendLog("");
-
       try {
+        if (file) {
+          appendLog("上传 PSD: " + file.name);
+          const uploaded = await uploadPsdFile(file);
+          appendLog("已缓存: " + uploaded.relPath);
+          appendLog("");
+        }
+
+        const payload = {
+          psdPath: psdPath.value.trim(),
+          prefabDir: prefabDir.value.trim(),
+          prefabName: prefabName.value.trim(),
+          cc: cc.value,
+          texturePath: texturePath.value.trim(),
+          fontsPath: fontsPath.value.trim(),
+          allowMissing: allowMissing.checked
+        };
+
+        appendLog("请求参数:");
+        appendLog(JSON.stringify(payload, null, 2));
+        appendLog("");
         const res = await fetch("/api/export", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -389,6 +427,10 @@
 
         if (result.ok) {
           appendLog("✅ 导出成功");
+          if (result.uiDescPath) appendLog("ui_desc: " + result.uiDescPath);
+          if (result.exportDir) appendLog("PNG 源: " + result.exportDir);
+          if (result.textureDir) appendLog("纹理目录: " + result.textureDir + " (" + (result.textureCount || 0) + " 张)");
+          if (result.assetsRoot) appendLog("assets: " + result.assetsRoot);
           appendLog("Prefab: " + result.prefabPath);
           appendLog("Meta:   " + result.metaPath);
           appendLog("UUID:   " + result.uuid);
@@ -408,9 +450,7 @@
     });
 
     loadPrefs();
-    loadExports().catch((err) => {
-      appendLog("⚠️ 无法加载导出列表: " + err.message);
-    });
+    suggestPrefabDir();
   </script>
 </body>
 </html>
