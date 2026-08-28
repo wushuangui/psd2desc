@@ -487,6 +487,8 @@ function parseTypeToolText(data) {
         const autoLeading = engineBool(style, "AutoLeading");
         const leading = engineNumber(style, "Leading");
         const lineHeight = (autoLeading === false && leading) ? leading : fontSize * 1.2;
+        // Photoshop Tracking 单位是 1/1000 em。
+        const tracking = engineNumber(style, "Tracking") || 0;
         const fonts = engineFontNames(raw);
         const fontIndex = engineNumber(style, "Font");
         const isParagraph = engineNumber(raw, "ShapeType") === 1;
@@ -523,10 +525,14 @@ function parseTypeToolText(data) {
             }
         } catch (_) { /* 文本主体已解析，忽略不兼容的 warp 数据 */ }
 
+        const visualFontSize = Math.max(1, fontSize * scale);
         return {
             text,
-            fontSize: Math.max(1, fontSize * scale),
+            fontSize: visualFontSize,
             lineHeight: Math.max(1, lineHeight * scale),
+            letterSpacing: tracking
+                ? Number((tracking / 1000 * visualFontSize).toFixed(2))
+                : 0,
             color: engineColor(style) || [255, 255, 255, 255],
             bold: engineBool(style, "FauxBold") === true,
             fontFamily: (fontIndex != null && fonts[fontIndex]) || fonts[0] || "",
@@ -1192,6 +1198,7 @@ function walkLayer(layer, docHeight, usedNames) {
         base.text = t.text || "";
         base.fontSize = Math.max(1, Math.round(t.fontSize || 24));
         base.lineHeight = Math.max(1, Math.round(t.lineHeight || base.fontSize * 1.2));
+        if (t.letterSpacing) base.letterSpacing = t.letterSpacing;
         base.color = t.color || [255, 255, 255, 255];
         if (t.bold) base.bold = true;
         if (t.fontFamily) base.fontFamily = t.fontFamily;

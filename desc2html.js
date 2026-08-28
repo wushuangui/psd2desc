@@ -195,18 +195,19 @@ function isInlineMixSprite(label, sprite) {
     return w > 0 && h > 0 && h <= maxHeight && w <= maxWidth;
 }
 
-function lineVisualHeight(label, spriteHeight) {
-    const base = label.lineHeight || (label.fontSize || 24) * 1.2;
-    return Math.max(base, spriteHeight || 0);
+function lineVisualHeight(label) {
+    // 行高只跟 PSD Leading 走。重叠的 sprite 是独立图层，不能把文字行撑高，
+    // 否则编号层（无图）和正文层（有图）行距会错开，出现「3.」后面空一大截。
+    return label.lineHeight || (label.fontSize || 24) * 1.2;
 }
 
 function manualLineBandYAt(label, lineIndex, lines, spriteHeights) {
     const labelTop = (label.y || 0) + (label.height || 0);
     let cursor = labelTop;
     for (let i = 0; i < lineIndex; i++) {
-        cursor -= lineVisualHeight(label, spriteHeights && spriteHeights[i]);
+        cursor -= lineVisualHeight(label);
     }
-    const h = lineVisualHeight(label, spriteHeights && spriteHeights[lineIndex]);
+    const h = lineVisualHeight(label);
     return { center: cursor - h / 2, half: h / 2 };
 }
 
@@ -456,13 +457,9 @@ function renderLabelTextContent(text, label, siblings, useAbsoluteLines) {
 
     const src = lines.join("\n");
     if (!isManualLayoutText(src)) return escapeHtml(src);
-    return lines.map((line, lineIndex) => {
+    return lines.map((line) => {
         if (/ {4,}/.test(line)) {
-            const minH = Math.max(lineHeight, spriteHeights[lineIndex] || 0);
-            const style = minH > lineHeight + 0.5
-                ? ` style="min-height:${Math.round(minH)}px"`
-                : "";
-            return `<span class="manual-line"${style}>${escapeHtml(line)}</span>`;
+            return `<span class="manual-line">${escapeHtml(line)}</span>`;
         }
         return escapeHtml(line);
     }).join("\n");
@@ -488,6 +485,9 @@ function buildLabelStyle(node, parent, useAbsoluteLines) {
     if (node.bold) style.push("font-weight:700");
     if (node.fontFamily) {
         style.push(`font-family:'${node.fontFamily.replace(/['\\]/g, "")}',${LABEL_FONT_FALLBACK}`);
+    }
+    if (node.letterSpacing) {
+        style.push(`letter-spacing:${node.letterSpacing}px`);
     }
     const textEffects = applyTextEffects(style, node);
     const multiLine = node.paragraph || String(node.text || "").indexOf("\n") >= 0;
