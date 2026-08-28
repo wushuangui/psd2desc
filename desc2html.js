@@ -281,6 +281,30 @@ function lineBandOverlapsLabel(band, other) {
     return lineBottom < otherTop && lineTop > otherBottom;
 }
 
+function lineBandsOverlap(a, b, gap = 1) {
+    const aBottom = a.center - a.half;
+    const aTop = a.center + a.half;
+    const bBottom = b.center - b.half;
+    const bTop = b.center + b.half;
+    return aBottom < bTop - gap && aTop > bBottom + gap;
+}
+
+function hasOverlappingParagraphLabels(siblings) {
+    const paragraphs = (siblings || []).filter((c) =>
+        c.type === "label" && (c.paragraph || String(c.text || "").indexOf("\n") >= 0));
+    for (let i = 0; i < paragraphs.length; i++) {
+        for (let j = i + 1; j < paragraphs.length; j++) {
+            if (boxesOverlap(paragraphs[i], paragraphs[j])) return true;
+        }
+    }
+    return false;
+}
+
+function lineBottomInLabel(label, lineIndex, lines, spriteHeights) {
+    const band = manualLineBandYAt(label, lineIndex, lines, spriteHeights);
+    return { bottom: (band.center - band.half) - (label.y || 0), height: band.half * 2, band };
+}
+
 function trimmedLineText(line) {
     return String(line || "").replace(/[ \t\u200b\uFEFF]+/g, "").trim();
 }
@@ -293,6 +317,7 @@ function isFillInOverlayLabel(label) {
 }
 
 function isPlaceholderGapLine(lines, index) {
+    if (trimmedLineText(lines[index])) return false;
     let blanksBefore = 0;
     for (let i = index - 1; i >= 0 && !trimmedLineText(lines[i]); i--) blanksBefore++;
     let blanksAfter = 0;
@@ -303,13 +328,47 @@ function isPlaceholderGapLine(lines, index) {
 function isDuplicatePhantomLine(allLines, lineIndex) {
     const text = trimmedLineText(allLines[lineIndex]);
     if (!text) return false;
-    for (let i = lineIndex + 1; i < allLines.length; i++) {
+    for (let i = 0; i < lineIndex; i++) {
         if (trimmedLineText(allLines[i]) === text) return true;
     }
     return false;
 }
 
-function shouldSkipLineForSibling(label, lineIndex, line, siblings, allLines) {
+function getBodyLabelForOverlay(overlay, siblings) {
+    const candidates = (siblings || []).filter((s) =>
+        s !== overlay && s.type === "label" && s.paragraph &&
+        !isFillInOverlayLabel(s) && boxesOverlap(overlay, s));
+    if (!candidates.length) return null;
+    return candidates.sort((a, b) => String(b.text || "").length - String(a.text || "").length)[0];
+}
+
+function subListBlankSlots(bodyLabel) {
+    const bodyLines = String(bodyLabel.text || "").split("\n");
+    const slots = [];
+    let capture = false;
+    for (let i = 0; i < bodyLines.length; i++) {
+        const t = trimmedLineText(bodyLines[i]);
+        if (t && /而变化[：:]$/.test(t)) {
+            capture = true;
+            continue;
+        }
+        if (!capture) continue;
+        if (t && /每颗/.test(t)) break;
+        if (!t && !/ {4,}/.test(bodyLines[i])) slots.push(i);
+    }
+    return { bodyLabel, bodyLines, slots };
+}
+
+function overlayLineRemap(label, siblings) {
+    if (!isFillInOverlayLabel(label)) return null;
+    const body = getBodyLabelForOverlay(label, siblings);
+    if (!body) return null;
+    const { bodyLines, slots } = subListBlankSlots(body);
+    if (!slots.length) return null;
+    return { body, bodyLines, slots };
+}
+
+function shouldSkipLineForSibling(label, lineIndex, line, siblings, allLines, useAbsoluteLines) {
     if (!trimmedLineText(line)) return false;
     if (isDuplicatePhantomLine(allLines, lineIndex)) return true;
 
@@ -322,9 +381,19 @@ function shouldSkipLineForSibling(label, lineIndex, line, siblings, allLines) {
 
     if (isPlaceholderGapLine(allLines, lineIndex)) return true;
 
+    if (!useAbsoluteLines && !isFillInOverlayLabel(label)) {
+        const overlayLines = String(overlay.text || "").split("\n");
+        const overlayHeights = spriteHeightsForLabel(overlay, siblings);
+        for (let j = 0; j < overlayLines.length; j++) {
+            if (!trimmedLineText(overlayLines[j])) continue;
+            const ob = manualLineBandYAt(overlay, j, overlayLines, overlayHeights);
+            if (lineBandsOverlap(band, ob, 3)) return true;
+        }
+    }
+
     let blanksBefore = 0;
     for (let i = lineIndex - 1; i >= 0 && !trimmedLineText(allLines[i]); i--) blanksBefore++;
-    return blanksBefore >= 2;
+    return !useAbsoluteLines && blanksBefore >= 2;
 }
 
 function cleanGroupLabelText(node) {
@@ -334,25 +403,60 @@ function cleanGroupLabelText(node) {
     for (const label of labels) {
         const lines = String(label.text || "").split("\n");
         label.text = lines.map((line, i) =>
-            shouldSkipLineForSibling(label, i, line, labels, lines) ? "" : line
+            shouldSkipLineForSibling(label, i, line, labels, lines, false) ? "" : line
         ).join("\n");
     }
 }
 
-function renderLabelTextContent(text, label, siblings) {
-    let src = String(text || "");
-    const lines = src.split("\n");
+function filterLabelLines(text, label, siblings, useAbsoluteLines) {
+    const lines = String(text || "").split("\n");
+    if (!label || !siblings || !siblings.length) return lines;
+    return lines.map((line, i) =>
+        shouldSkipLineForSibling(label, i, line, siblings, lines, useAbsoluteLines) ? "" : line);
+}
+
+function renderLabelTextContent(text, label, siblings, useAbsoluteLines) {
+    const lines = filterLabelLines(text, label, siblings, useAbsoluteLines);
     const spriteHeights = label ? spriteHeightsForLabel(label, siblings || []) : {};
-    if (label && siblings && siblings.length) {
-        src = lines.map((line, i) =>
-            shouldSkipLineForSibling(label, i, line, siblings, lines) ? "" : line
-        ).join("\n");
-    }
-    if (!isManualLayoutText(src)) return escapeHtml(src);
     const lineHeight = label
         ? (label.lineHeight || (label.fontSize || 24) * 1.2)
         : 24;
-    return src.split("\n").map((line, lineIndex) => {
+    const remap = useAbsoluteLines ? overlayLineRemap(label, siblings) : null;
+    let subListIdx = 0;
+
+    if (useAbsoluteLines && label) {
+        const parts = [];
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (!trimmedLineText(line) && !/ {4,}/.test(line)) continue;
+            let pos;
+            if (remap && trimmedLineText(line)) {
+                const slot = remap.slots[subListIdx];
+                if (slot != null) {
+                    const bodyHeights = spriteHeightsForLabel(remap.body, siblings);
+                    const bodyPos = lineBottomInLabel(remap.body, slot, remap.bodyLines, bodyHeights);
+                    pos = {
+                        bottom: bodyPos.bottom + (remap.body.y || 0) - (label.y || 0),
+                        height: bodyPos.height
+                    };
+                    subListIdx++;
+                }
+            }
+            if (!pos) pos = lineBottomInLabel(label, i, lines, spriteHeights);
+            const style = [
+                `bottom:${Math.round(pos.bottom)}px`,
+                `height:${Math.round(pos.height)}px`,
+                `line-height:${Math.round(lineHeight)}px`
+            ];
+            const cls = / {4,}/.test(line) ? "abs-line manual-line" : "abs-line";
+            parts.push(`<span class="${cls}" style="${style.join(";")}">${escapeHtml(line)}</span>`);
+        }
+        return parts.join("");
+    }
+
+    const src = lines.join("\n");
+    if (!isManualLayoutText(src)) return escapeHtml(src);
+    return lines.map((line, lineIndex) => {
         if (/ {4,}/.test(line)) {
             const minH = Math.max(lineHeight, spriteHeights[lineIndex] || 0);
             const style = minH > lineHeight + 0.5
@@ -364,7 +468,7 @@ function renderLabelTextContent(text, label, siblings) {
     }).join("\n");
 }
 
-function buildLabelStyle(node, parent) {
+function buildLabelStyle(node, parent, useAbsoluteLines) {
     const left = (node.x || 0) - (parent ? parent.x || 0 : 0);
     const bottom = (node.y || 0) - (parent ? parent.y || 0 : 0);
     const opacity = Number.isFinite(node.opacity) ? node.opacity : 1;
@@ -387,7 +491,7 @@ function buildLabelStyle(node, parent) {
     }
     const textEffects = applyTextEffects(style, node);
     const multiLine = node.paragraph || String(node.text || "").indexOf("\n") >= 0;
-    if (multiLine && node.lineHeight) {
+    if (multiLine && node.lineHeight && !useAbsoluteLines) {
         style.push(`line-height:${node.lineHeight}px`);
         const shift = (node.lineHeight - fontSize) / 2;
         if (shift > 0.5) style.push(`transform:translateY(${-Math.round(shift)}px)`);
@@ -395,23 +499,26 @@ function buildLabelStyle(node, parent) {
     return { style, textEffects, fontSize };
 }
 
-function renderLabelHtml(node, parent, siblings) {
+function renderLabelHtml(node, parent, siblings, useAbsoluteLines) {
     const name = escapeHtml(node.name || "");
     const cls = ["layer", "label"].join(" ");
-    const { style, textEffects } = buildLabelStyle(node, parent);
+    const { style: baseStyle, textEffects } = buildLabelStyle(node, parent, false);
+    const absLines = useAbsoluteLines && node.paragraph && !textEffects.hasGradientStroke;
+    const { style } = absLines ? buildLabelStyle(node, parent, true) : { style: baseStyle };
     const paragraphClass = node.paragraph ? " paragraph" : "";
+    const absClass = absLines ? " absolute-lines" : "";
     const effectClass = textEffects.hasGradientStroke
-        ? `${cls}${paragraphClass} gradient-stroke${textEffects.hasGradientFill ? " gradient-fill" : ""}`
-        : `${cls}${paragraphClass}`;
+        ? `${cls}${paragraphClass}${absClass} gradient-stroke${textEffects.hasGradientFill ? " gradient-fill" : ""}`
+        : `${cls}${paragraphClass}${absClass}`;
     const dataText = textEffects.hasGradientStroke
         ? ` data-text="${escapeHtml(node.text || "")}"`
         : "";
-    const inner = renderLabelTextContent(node.text, node, siblings);
+    const inner = renderLabelTextContent(node.text, node, siblings, absLines);
     return `<div class="${effectClass}" data-name="${name}" title="${name}"${dataText} ` +
         `style="${style.join(";")}">${inner}</div>`;
 }
 
-function renderHtmlNode(node, parent, groupSiblings) {
+function renderHtmlNode(node, parent, groupSiblings, useAbsoluteLines) {
     const left = (node.x || 0) - (parent ? parent.x || 0 : 0);
     const bottom = (node.y || 0) - (parent ? parent.y || 0 : 0);
     const opacity = Number.isFinite(node.opacity) ? node.opacity : 1;
@@ -435,14 +542,15 @@ function renderHtmlNode(node, parent, groupSiblings) {
     }
 
     if (node.type === "label") {
-        return renderLabelHtml(node, parent, groupSiblings);
+        return renderLabelHtml(node, parent, groupSiblings, useAbsoluteLines);
     }
 
     const children = node.children || [];
+    const absLines = useAbsoluteLines || hasOverlappingParagraphLabels(children);
     const kids = children
         .slice()
         .reverse()
-        .map((child) => renderHtmlNode(child, node, children))
+        .map((child) => renderHtmlNode(child, node, children, absLines))
         .join("");
     return `<div class="${cls}" data-name="${name}" title="${name}" style="${style.join(";")}">${kids}</div>`;
 }
@@ -540,6 +648,22 @@ function writePreviewHtml(rootDesc, exportDir) {
     white-space: pre;
     display: block;
     box-sizing: border-box;
+  }
+  .layer.label.paragraph.absolute-lines {
+    white-space: normal;
+    line-height: 1;
+    overflow: visible;
+  }
+  .layer.label.paragraph.absolute-lines .abs-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    white-space: pre-wrap;
+    overflow: visible;
+    box-sizing: border-box;
+  }
+  .layer.label.paragraph.absolute-lines .abs-line.manual-line {
+    white-space: pre;
   }
   .layer.label.gradient-stroke::before {
     content: attr(data-text);
