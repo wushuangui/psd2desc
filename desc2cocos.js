@@ -8,7 +8,7 @@ const { MetaResolver } = require("./lib/meta-resolver");
 const { emitPrefab2x } = require("./lib/emit-2x");
 const { emitPrefab3x } = require("./lib/emit-3x");
 const { writePrefab, readFileIdMap } = require("./lib/prefab-writer");
-const { sanitizePrefabArray } = require("./lib/prefab-sanitize");
+const { sanitizePrefabArray, collectExternalPrefabUuids } = require("./lib/prefab-sanitize");
 const { ensureMappedFontMetas } = require("./lib/asset-meta");
 
 function parseArgs(argv) {
@@ -54,25 +54,94 @@ function printUsage() {
 `);
 }
 
+function findPrefabPathByUuid(uuid, searchDirs) {
+    for (const dir of searchDirs) {
+        if (!dir || !fs.existsSync(dir)) continue;
+        let entries;
+        try {
+            entries = fs.readdirSync(dir);
+        } catch (_) {
+            continue;
+        }
+        for (const file of entries) {
+            if (!file.endsWith(".prefab.meta")) continue;
+            const metaPath = path.join(dir, file);
+            try {
+                const meta = fs.readJsonSync(metaPath);
+                if (meta.uuid === uuid) return metaPath.slice(0, -".meta".length);
+            } catch (_) {
+                // ignore unreadable meta
+            }
+        }
+    }
+    return "";
+}
+
+function cleanOnePrefab(resolved) {
+    const before = fs.readJsonSync(resolved);
+    if (!Array.isArray(before)) {
+        throw new Error(`prefab 格式无效: ${resolved}`);
+    }
+    const after = sanitizePrefabArray(before);
+    fs.writeJsonSync(resolved, after, { spaces: 2 });
+    return {
+        prefabPath: resolved,
+        beforeCount: before.length,
+        afterCount: after.length,
+        removed: before.length - after.length
+    };
+}
+
 function cleanPrefabFile(prefabPath) {
     const resolved = path.resolve(prefabPath);
     if (!fs.existsSync(resolved)) {
         return { ok: false, error: `找不到 prefab: ${resolved}` };
     }
 
-    const before = fs.readJsonSync(resolved);
-    if (!Array.isArray(before)) {
-        return { ok: false, error: "prefab 格式无效" };
+    const dir = path.dirname(resolved);
+    const searchDirs = [dir, path.dirname(dir), path.dirname(path.dirname(dir))];
+    const queue = [];
+    const visited = new Set();
+
+    function enqueue(filePath) {
+        const abs = path.resolve(filePath);
+        if (visited.has(abs) || !fs.existsSync(abs)) return;
+        visited.add(abs);
+        queue.push(abs);
     }
 
-    const after = sanitizePrefabArray(before);
-    fs.writeJsonSync(resolved, after, { spaces: 2 });
+    enqueue(resolved);
+    for (const file of fs.readdirSync(dir)) {
+        if (file.endsWith(".prefab")) enqueue(path.join(dir, file));
+    }
+
+    const cleaned = [];
+    while (queue.length) {
+        const target = queue.shift();
+        let before;
+        try {
+            before = fs.readJsonSync(target);
+        } catch (_) {
+            continue;
+        }
+        if (!Array.isArray(before)) continue;
+
+        for (const uuid of collectExternalPrefabUuids(before)) {
+            const refPath = findPrefabPathByUuid(uuid, searchDirs);
+            if (refPath) enqueue(refPath);
+        }
+
+        cleaned.push(cleanOnePrefab(target));
+    }
+
+    const primary = cleaned.find((item) => item.prefabPath === resolved) || cleaned[0];
     return {
         ok: true,
         prefabPath: resolved,
-        beforeCount: before.length,
-        afterCount: after.length,
-        removed: before.length - after.length
+        cleaned,
+        beforeCount: primary.beforeCount,
+        afterCount: primary.afterCount,
+        removed: primary.removed
     };
 }
 
@@ -153,7 +222,14 @@ function main() {
             process.exit(1);
         }
         console.log(`✅ 已清理: ${result.prefabPath}`);
-        console.log(`📦 对象数: ${result.beforeCount} → ${result.afterCount}（移除 ${result.removed}）`);
+        if (result.cleaned && result.cleaned.length > 1) {
+            console.log(`📦 同目录/关联 prefab 共 ${result.cleaned.length} 个:`);
+            for (const item of result.cleaned) {
+                console.log(`   ${item.prefabPath} (${item.beforeCount} → ${item.afterCount})`);
+            }
+        } else {
+            console.log(`📦 对象数: ${result.beforeCount} → ${result.afterCount}（移除 ${result.removed}）`);
+        }
         return;
     }
 
