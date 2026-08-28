@@ -332,10 +332,16 @@ function trimmedLineText(line) {
     return String(line || "").replace(/[ \t\u200b\uFEFF]+/g, "").trim();
 }
 
+// 仅含序号、无正文的行，例如 "1." / "5."；带内容的 "a. Number of..." 不算 overlay 行。
+function isNumberOnlyListLine(line) {
+    const t = trimmedLineText(line);
+    return /^\d+\.$/.test(t) || /^[a-zA-Z]\.$/.test(t);
+}
+
 function isFillInOverlayLabel(label) {
     if (!label || label.type !== "label") return false;
     const listLines = String(label.text || "").split("\n")
-        .filter((line) => /^[a-zA-Z]\.\s/.test(line.trim()));
+        .filter((line) => isNumberOnlyListLine(line));
     return listLines.length >= 2;
 }
 
@@ -410,13 +416,17 @@ function shouldSkipLineForSibling(label, lineIndex, line, siblings, allLines, us
         for (let j = 0; j < overlayLines.length; j++) {
             if (!trimmedLineText(overlayLines[j])) continue;
             const ob = manualLineBandYAt(overlay, j, overlayLines, overlayHeights);
-            if (lineBandsOverlap(band, ob, 3)) return true;
+            if (lineBandsOverlap(band, ob, 3)) {
+                const bodyTrim = trimmedLineText(line);
+                const overlayTrim = trimmedLineText(overlayLines[j]);
+                if (isNumberOnlyListLine(line) || bodyTrim === overlayTrim) return true;
+            }
         }
     }
 
     let blanksBefore = 0;
     for (let i = lineIndex - 1; i >= 0 && !trimmedLineText(allLines[i]); i--) blanksBefore++;
-    return !useAbsoluteLines && blanksBefore >= 2;
+    return !useAbsoluteLines && blanksBefore >= 2 && isNumberOnlyListLine(line);
 }
 
 function cleanGroupLabelText(node) {
