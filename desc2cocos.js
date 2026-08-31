@@ -82,7 +82,9 @@ function cleanOnePrefab(resolved) {
     if (!Array.isArray(before)) {
         throw new Error(`prefab 格式无效: ${resolved}`);
     }
-    const after = sanitizePrefabArray(before);
+    const after = sanitizePrefabArray(before, {
+        ccVersion: before.some((obj) => obj && obj.__type__ === "cc.UITransform") ? 3 : 2
+    });
     fs.writeJsonSync(resolved, after, { spaces: 2 });
     return {
         prefabPath: resolved,
