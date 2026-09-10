@@ -200,10 +200,17 @@
         <p class="hint">填写本机 PSD/PSB 绝对路径；中间产物（<code>ui_desc.json</code>、PNG）写入 <code>psd_export/</code>，无需手动填写。</p>
       </div>
 
+      <div>
+        <label for="projectPrefix">工程根路径</label>
+        <input id="projectPrefix" name="projectPrefix" type="text" placeholder="D:/Game/MayanTreasure">
+        <p class="hint">填写 Cocos 工程根目录（含 <code>assets</code> 文件夹的上级目录）。设置后，下方三个目录可只填相对路径（如 <code>assets/prefabs</code>），提交时自动拼接为绝对路径。</p>
+      </div>
+
       <div class="row-2">
         <div>
           <label for="prefabDir">预制体保存目录 *</label>
-          <input id="prefabDir" name="prefabDir" type="text" placeholder="D:/Game/assets/prefabs" required>
+          <input id="prefabDir" name="prefabDir" type="text" placeholder="assets/prefabs" required>
+          <p class="hint" id="prefabDirResolved"></p>
         </div>
         <div>
           <label for="prefabName">预制体名称 *</label>
@@ -222,15 +229,17 @@
         </div>
         <div>
           <label for="texturePath">纹理资源目录 *</label>
-          <input id="texturePath" name="texturePath" type="text" placeholder="D:/Game/assets/images/rule/1" required>
+          <input id="texturePath" name="texturePath" type="text" placeholder="assets/images/rule/1" required>
+          <p class="hint" id="texturePathResolved"></p>
         </div>
       </div>
-      <p class="hint">填写本机绝对路径（须在 assets 目录下）；导出 PNG 将复制到该目录，并与 prefab 中 Sprite 引用路径一致。</p>
+      <p class="hint">须在 <code>assets</code> 目录下；导出 PNG 将复制到该目录，并与 prefab 中 Sprite 引用路径一致。未设置工程根路径时可填绝对路径。</p>
 
       <div>
         <label for="fontsPath">字体资源目录 *</label>
-        <input id="fontsPath" name="fontsPath" type="text" placeholder="D:/Game/assets/images/fonts" required>
-        <p class="hint">填写本机绝对路径（须在 assets 目录下）；Label 字体 UUID 从该目录下的 <code>.meta</code> 读取；字体族名映射见 <code>config/font-map.json</code>。</p>
+        <input id="fontsPath" name="fontsPath" type="text" placeholder="assets/images/fonts" required>
+        <p class="hint" id="fontsPathResolved"></p>
+        <p class="hint">须在 <code>assets</code> 目录下；Label 字体 UUID 从该目录下的 <code>.meta</code> 读取；字体族名映射见 <code>config/font-map.json</code>。</p>
       </div>
 
       <div class="check-row">
@@ -256,11 +265,15 @@
   <script>
     const form = document.getElementById("exportForm");
     const psdPath = document.getElementById("psdPath");
+    const projectPrefix = document.getElementById("projectPrefix");
     const prefabDir = document.getElementById("prefabDir");
     const prefabName = document.getElementById("prefabName");
     const cc = document.getElementById("cc");
     const texturePath = document.getElementById("texturePath");
     const fontsPath = document.getElementById("fontsPath");
+    const prefabDirResolved = document.getElementById("prefabDirResolved");
+    const texturePathResolved = document.getElementById("texturePathResolved");
+    const fontsPathResolved = document.getElementById("fontsPathResolved");
     const allowMissing = document.getElementById("allowMissing");
     const log = document.getElementById("log");
     const submitBtn = document.getElementById("submitBtn");
@@ -285,9 +298,97 @@
       return base.replace(/\.(psd|psb)$/i, "");
     }
 
+    function normalizePath(p) {
+      return String(p || "").replace(/\\/g, "/").replace(/\/+$/, "");
+    }
+
+    function isAbsolutePath(p) {
+      const n = normalizePath(p);
+      return /^[a-zA-Z]:\//.test(n) || n.startsWith("/");
+    }
+
+    function joinPath(prefix, relative) {
+      const rel = String(relative || "").trim();
+      if (!rel) return "";
+      if (isAbsolutePath(rel)) return rel;
+      const base = normalizePath(prefix);
+      if (!base) return rel;
+      const sub = rel.replace(/\\/g, "/").replace(/^\/+/, "");
+      return base + "/" + sub;
+    }
+
+    function resolvePathInput(relative) {
+      return joinPath(projectPrefix.value.trim(), relative);
+    }
+
+    function toRelativePath(prefix, absolute) {
+      const base = normalizePath(prefix);
+      const abs = normalizePath(absolute);
+      if (!base || !abs || !isAbsolutePath(abs)) return absolute;
+      const baseLower = base.toLowerCase();
+      const absLower = abs.toLowerCase();
+      if (absLower === baseLower) return "";
+      if (absLower.startsWith(baseLower + "/")) {
+        return abs.slice(base.length + 1);
+      }
+      return absolute;
+    }
+
+    function deriveProjectPrefixFromAbsolutePath(absPath) {
+      const normalized = normalizePath(absPath);
+      const match = normalized.match(/^(.*)\/assets(?:\/|$)/i);
+      return match ? match[1] : "";
+    }
+
+    function maybeRelativizeStoredPaths() {
+      const prefix = projectPrefix.value.trim();
+      if (!prefix) return;
+      [prefabDir, texturePath, fontsPath].forEach((input) => {
+        const val = input.value.trim();
+        if (val && isAbsolutePath(val)) {
+          input.value = toRelativePath(prefix, val);
+        }
+      });
+    }
+
+    function tryInferProjectPrefix() {
+      if (projectPrefix.value.trim()) return;
+      const candidates = [texturePath.value, prefabDir.value, fontsPath.value]
+        .map((v) => v.trim())
+        .filter((v) => v && isAbsolutePath(v));
+      if (!candidates.length) return;
+      const prefix = deriveProjectPrefixFromAbsolutePath(candidates[0]);
+      if (!prefix) return;
+      projectPrefix.value = prefix;
+      maybeRelativizeStoredPaths();
+    }
+
+    function updateResolvedHints() {
+      const prefix = projectPrefix.value.trim();
+      const entries = [
+        [prefabDirResolved, prefabDir.value],
+        [texturePathResolved, texturePath.value],
+        [fontsPathResolved, fontsPath.value]
+      ];
+      entries.forEach(([el, val]) => {
+        const trimmed = val.trim();
+        if (!prefix || !trimmed) {
+          el.textContent = "";
+          return;
+        }
+        const resolved = resolvePathInput(trimmed);
+        if (resolved !== trimmed) {
+          el.textContent = "完整路径: " + resolved;
+        } else {
+          el.textContent = "";
+        }
+      });
+    }
+
     function savePrefs() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         psdPath: psdPath.value,
+        projectPrefix: projectPrefix.value,
         prefabDir: prefabDir.value,
         prefabName: prefabName.value,
         cc: cc.value,
@@ -303,12 +404,15 @@
         if (!raw) return;
         const prefs = JSON.parse(raw);
         if (prefs.psdPath) psdPath.value = prefs.psdPath;
+        if (prefs.projectPrefix) projectPrefix.value = prefs.projectPrefix;
         if (prefs.prefabDir) prefabDir.value = prefs.prefabDir;
         if (prefs.prefabName) prefabName.value = prefs.prefabName;
         if (prefs.cc) cc.value = prefs.cc;
         if (prefs.texturePath) texturePath.value = prefs.texturePath;
         if (prefs.fontsPath) fontsPath.value = prefs.fontsPath;
         if (prefs.allowMissing) allowMissing.checked = true;
+        tryInferProjectPrefix();
+        maybeRelativizeStoredPaths();
       } catch (_) {}
     }
 
@@ -323,7 +427,7 @@
     });
 
     function deriveAssetsRootFromPath(dirPath) {
-      const normalized = String(dirPath || "").replace(/\\/g, "/");
+      const normalized = resolvePathInput(dirPath);
       const match = normalized.match(/^(.*\/assets)(?:\/|$)/i);
       return match ? match[1] : "";
     }
@@ -332,12 +436,25 @@
       if (prefabDir.value.trim()) return;
       const assetsRoot = deriveAssetsRootFromPath(texturePath.value.trim());
       if (!assetsRoot) return;
-      const sep = assetsRoot.includes("\\") ? "\\" : "/";
-      prefabDir.value = assetsRoot + sep + "prefabs";
+      const prefix = projectPrefix.value.trim();
+      if (prefix) {
+        prefabDir.value = toRelativePath(prefix, assetsRoot + "/prefabs") || "assets/prefabs";
+      } else {
+        prefabDir.value = assetsRoot + "/prefabs";
+      }
+      updateResolvedHints();
     }
 
     psdPath.addEventListener("change", () => {
       if (!prefabName.value.trim()) fillNameFromPsd();
+    });
+
+    [projectPrefix, prefabDir, texturePath, fontsPath].forEach((input) => {
+      input.addEventListener("input", updateResolvedHints);
+      input.addEventListener("blur", () => {
+        tryInferProjectPrefix();
+        updateResolvedHints();
+      });
     });
 
     texturePath.addEventListener("change", suggestPrefabDir);
@@ -366,11 +483,11 @@
       try {
         const payload = {
           psdPath: psdFilePath,
-          prefabDir: prefabDir.value.trim(),
+          prefabDir: resolvePathInput(prefabDir.value),
           prefabName: prefabName.value.trim(),
           cc: cc.value,
-          texturePath: texturePath.value.trim(),
-          fontsPath: fontsPath.value.trim(),
+          texturePath: resolvePathInput(texturePath.value),
+          fontsPath: resolvePathInput(fontsPath.value),
           allowMissing: allowMissing.checked
         };
 
@@ -425,6 +542,7 @@
     });
 
     loadPrefs();
+    updateResolvedHints();
     suggestPrefabDir();
   </script>
 </body>
