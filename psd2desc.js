@@ -22,6 +22,87 @@ const LONG_ALI_KEYS = new Set([
     "FMsk", "lnk2", "lnk3", "lnkE", "FEid", "FXid", "PxSD", "cinf", "extn"
 ]);
 
+const MAX_NODE_BUFFER = require("buffer").kMaxLength || 0x7fffffff;
+// fs.readFileSync 固定拒绝 >2GiB，和 Buffer.kMaxLength（Node 22 可能更大）不是一回事。
+const FS_READFILE_MAX = 0x7fffffff;
+const FILE_WINDOW_SIZE = 16 * 1024 * 1024;
+
+// Node Buffer 不能超过约 2GiB。更大的 PSD/PSB 用窗口 + 按需读取，避免整文件进内存。
+class FileBackedBuffer {
+    constructor(filePath, size) {
+        this.fd = fs.openSync(filePath, "r");
+        this.length = size;
+        this._winStart = 0;
+        this._win = Buffer.alloc(0);
+        this._closed = false;
+    }
+
+    close() {
+        if (this._closed) return;
+        this._closed = true;
+        fs.closeSync(this.fd);
+    }
+
+    _ensure(offset, len) {
+        const need = Math.max(0, Math.min(len, this.length - offset));
+        if (offset >= this._winStart && offset + need <= this._winStart + this._win.length) {
+            return offset - this._winStart;
+        }
+        const winLen = Math.min(Math.max(need, FILE_WINDOW_SIZE), Math.max(0, this.length - offset));
+        if (winLen <= 0) {
+            this._win = Buffer.alloc(0);
+            this._winStart = offset;
+            return 0;
+        }
+        const win = Buffer.allocUnsafe(winLen);
+        const n = fs.readSync(this.fd, win, 0, winLen, BigInt(offset));
+        this._win = n === winLen ? win : win.subarray(0, n);
+        this._winStart = offset;
+        return 0;
+    }
+
+    _read(method, pos, size) {
+        return this._win[method](this._ensure(pos, size));
+    }
+
+    readUInt8(pos) { return this._read("readUInt8", pos, 1); }
+    readInt8(pos) { return this._read("readInt8", pos, 1); }
+    readUInt16BE(pos) { return this._read("readUInt16BE", pos, 2); }
+    readInt16BE(pos) { return this._read("readInt16BE", pos, 2); }
+    readUInt32BE(pos) { return this._read("readUInt32BE", pos, 4); }
+    readInt32BE(pos) { return this._read("readInt32BE", pos, 4); }
+    readBigUInt64BE(pos) { return this._read("readBigUInt64BE", pos, 8); }
+    readDoubleBE(pos) { return this._read("readDoubleBE", pos, 8); }
+    readFloatBE(pos) { return this._read("readFloatBE", pos, 4); }
+
+    toString(enc, start, end) {
+        const len = Math.max(0, end - start);
+        const i = this._ensure(start, len);
+        return this._win.toString(enc, i, i + len);
+    }
+
+    subarray(start, end) {
+        const from = Math.max(0, start);
+        const to = Math.min(this.length, end);
+        const len = Math.max(0, to - from);
+        if (len === 0) return Buffer.alloc(0);
+        if (len > MAX_NODE_BUFFER) {
+            throw new RangeError(`片段过大 (${len} bytes)，超过 Node Buffer 上限`);
+        }
+        const buf = Buffer.allocUnsafe(len);
+        const n = fs.readSync(this.fd, buf, 0, len, BigInt(from));
+        return n === len ? buf : buf.subarray(0, n);
+    }
+}
+
+function openPsdSource(filePath) {
+    const size = fs.statSync(filePath).size;
+    if (size <= FS_READFILE_MAX) return fs.readFileSync(filePath);
+    const gib = (size / (1024 * 1024 * 1024)).toFixed(2);
+    console.log(`📦 文件 ${gib} GiB，超过 fs.readFile 2GiB 上限，改用分段读取`);
+    return new FileBackedBuffer(filePath, size);
+}
+
 class Reader {
     constructor(buf) {
         this.buf = buf;
@@ -33,7 +114,9 @@ class Reader {
     }
 
     u8() {
-        return this.buf[this.pos++];
+        const v = this.buf.readUInt8(this.pos);
+        this.pos += 1;
+        return v;
     }
 
     i8() {
@@ -1306,6 +1389,7 @@ function uniqueName(name, used) {
 }
 
 (async function main() {
+    let source = null;
     try {
         fs.ensureDirSync(PSD_DIR);
         const { htmlOnly, fileArg } = parseCliArgs();
@@ -1320,12 +1404,12 @@ function uniqueName(name, used) {
         EXPORT_DIR = nextExportDir(namedDir);
 
         console.log(`📖 读取 ${psdFile} ...`);
-        const buf = fs.readFileSync(psdFile);
-        const psd = parsePsd(buf);
+        source = openPsdSource(psdFile);
+        const psd = parsePsd(source);
         hideDescendantsOfHiddenGroups(psd.layers);
         assignAncestorMasks(psd.layers);
         console.log(`✂️ 裁剪图层透明边 ...`);
-        prepareLayerImages(buf, psd.layers);
+        prepareLayerImages(source, psd.layers);
         console.log(`🌳 图层记录 ${psd.layers.length}，开始构建节点树...`);
         const children = buildTree(psd.layers);
         for (const child of children) unionGroupBounds(child);
@@ -1369,6 +1453,8 @@ function uniqueName(name, used) {
     } catch (err) {
         console.error("❌解析失败：", err);
         process.exitCode = 1;
+    } finally {
+        if (source && typeof source.close === "function") source.close();
     }
 })();
 
